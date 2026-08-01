@@ -139,7 +139,7 @@ export default class AgentStore {
 
     try {
       const handle = await consumeSSE<Record<string, unknown>>(
-        "/api/ai.agent.run",
+        "/api/ai-agent.run",
         { messages: wireMessages },
         (ev) => {
           runInAction(() => {

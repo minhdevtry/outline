@@ -9,7 +9,7 @@ import { answerQuestion, getAIStatus } from "@server/services/ai";
 import { APIContext } from "@server/types";
 import { getActiveEmbeddingModel } from "@server/utils/embeddings/mistral";
 import FullReindexTeamTask from "@server/queues/tasks/FullReindexTeamTask";
-import agentRouter from "./agent";
+import agentRouter, { handleAgentRun, handleAgentStatus } from "./agent";
 
 const router = new Router();
 
@@ -159,7 +159,10 @@ router.post(
   }
 );
 
-// Agent routes (streaming SSE for the right-rail AI Agent)
-router.use("/", agentRouter.routes());
+// Agent routes (streaming SSE for the right-rail AI Agent). Registered
+// inline (not via sub-router) to avoid the Koa-router 12 sub-router mount
+// conflict that produced 405 Method Not Allowed.
+router.post("ai-agent.run", auth(), rateLimiter({ requests: 30, duration: 60 }), handleAgentRun);
+router.post("ai-agent.status", auth(), handleAgentStatus);
 
 export default router;
