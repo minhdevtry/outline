@@ -223,6 +223,18 @@ class Team extends ParanoidModel<
   @Column(DataType.STRING)
   aiModel: string | null;
 
+  @AllowNull
+  @Column(DataType.STRING)
+  embeddingModel: string | null;
+
+  @AllowNull
+  @Column(DataType.INTEGER)
+  embeddingChunkSize: number | null;
+
+  @AllowNull
+  @Column(DataType.INTEGER)
+  embeddingChunkOverlap: number | null;
+
   @Default(UserRole.Member)
   @IsIn([[UserRole.Viewer, UserRole.Member]])
   @Column(DataType.STRING)

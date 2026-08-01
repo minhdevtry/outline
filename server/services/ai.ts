@@ -1,5 +1,8 @@
-import { Document, User, Team } from "@server/models";
+import Logger from "@server/logging/Logger";
+import { User, Team } from "@server/models";
 import env from "@server/env";
+import { teamHasEmbeddingKey } from "@server/utils/embeddings/mistral";
+import { searchChunks } from "@server/utils/rag/search";
 
 export interface AIAnswerResult {
   answer: string;
@@ -21,6 +24,7 @@ export interface AIConfigStatus {
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
 const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_CONTEXT_TOKENS = 6000;
 
 /**
  * Returns the configured AI base URL, defaulting to the public OpenAI API.
@@ -37,7 +41,9 @@ function getDefaultModel(): string {
 }
 
 /**
- * Check if AI Answer is configured and available for a team.
+ * Check if AI Answer is configured and available for a team. This is
+ * chat-side configuration (LLM API key + team toggle); RAG configuration
+ * (Mistral keys) is checked separately by `answerQuestion`.
  */
 export function getAIStatus(team: Team): AIConfigStatus {
   if (!env.OPENAI_API_KEY) {
@@ -65,41 +71,6 @@ export function getAIStatus(team: Team): AIConfigStatus {
 }
 
 /**
- * Search Outline documents for the given query and return top results as
- * context snippets.
- */
-async function getRelevantDocuments(
-  query: string,
-  teamId: string,
-  limit: number,
-): Promise<Array<{ id: string; title: string; text: string }>> {
-  // Simple search: find documents whose title or text matches the query
-  // For a production RAG system, use proper full-text search (Postgres tsvector).
-  const Op = (await import("sequelize")).Op;
-
-  const documents = await Document.findAll({
-    where: {
-      teamId,
-      publishedAt: { [Op.ne]: null },
-      // Use ILIKE for simple text matching. Replace with FTS in production.
-      [Op.or]: [
-        { title: { [Op.iLike]: `%${query}%` } },
-        { text: { [Op.iLike]: `%${query}%` } },
-      ],
-    },
-    attributes: ["id", "title", "text"],
-    limit,
-    order: [["updatedAt", "DESC"]],
-  });
-
-  return documents.map((d) => ({
-    id: d.id,
-    title: d.title,
-    text: (d.text ?? "").slice(0, 4000), // truncate to avoid huge prompts
-  }));
-}
-
-/**
  * Call an OpenAI/Anthropic-compatible Chat Completions endpoint to answer a
  * question using Outline documents as context. Honors AI_API_BASE_URL when set
  * so the same client works against OpenAI, an internal LLM gateway, or any
@@ -108,7 +79,7 @@ async function getRelevantDocuments(
 async function callChatCompletions(
   model: string,
   systemPrompt: string,
-  userPrompt: string,
+  userPrompt: string
 ): Promise<{ content: string; tokensUsed: number }> {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}/v1/chat/completions`;
@@ -144,10 +115,14 @@ async function callChatCompletions(
 
 /**
  * Answer a question using the team's Outline documents as context.
+ *
+ * Retrieval is hybrid: vector similarity (Mistral embedding) fused with
+ * keyword relevance (Postgres FTS + trigram) via Reciprocal Rank Fusion.
+ * See `server/utils/rag/search.ts` for the SQL.
  */
 export async function answerQuestion(
   query: string,
-  user: User,
+  user: User
 ): Promise<AIAnswerResult> {
   const team = await Team.findByPk(user.teamId);
   if (!team) {
@@ -159,13 +134,33 @@ export async function answerQuestion(
     throw new Error(status.reason ?? "AI not available");
   }
 
-  const documents = await getRelevantDocuments(
-    query,
-    user.teamId,
-    env.AI_MAX_CONTEXT_DOCS ?? 5,
-  );
+  // RAG pre-check: the team needs at least one valid Mistral key for the
+  // hybrid search to have a query embedding. Without it, fall back to a
+  // graceful "no docs" message rather than throwing a 500.
+  const hasKey = await teamHasEmbeddingKey(user.teamId);
+  if (!hasKey) {
+    return {
+      answer:
+        "AI search is not configured for this workspace yet. An admin needs to add a Mistral API key under Settings → AI → Embedding keys.",
+      sources: [],
+      tokensUsed: 0,
+    };
+  }
 
-  if (documents.length === 0) {
+  let chunks;
+  try {
+    chunks = await searchChunks(query, user.teamId, 8);
+  } catch (err) {
+    Logger.error(`[ai] searchChunks failed: ${(err as Error).message}`, err as Error);
+    return {
+      answer:
+        "I couldn't search the workspace right now. Please try again in a moment.",
+      sources: [],
+      tokensUsed: 0,
+    };
+  }
+
+  if (chunks.length === 0) {
     return {
       answer:
         "I couldn't find any relevant documents in your workspace to answer this question. Try rephrasing or creating more documents on this topic.",
@@ -174,31 +169,63 @@ export async function answerQuestion(
     };
   }
 
-  const contextBlock = documents
-    .map(
-      (d, i) =>
-        `[${i + 1}] Title: ${d.title}\nContent: ${d.text}\n---\n`,
-    )
+  // Cap total context to a reasonable token budget so the prompt never
+  // grows unbounded. Drop the lowest-RRF chunks until under the cap.
+  const maxContextTokens = env.AI_MAX_CONTEXT_TOKENS ?? DEFAULT_CONTEXT_TOKENS;
+  const maxContextChars = maxContextTokens * 4;
+  const MAX_CHUNK_CHARS = 1500;
+  const accepted: typeof chunks = [];
+  let used = 0;
+  for (const c of chunks) {
+    const truncated = c.content.length > MAX_CHUNK_CHARS
+      ? c.content.slice(0, MAX_CHUNK_CHARS) + "…"
+      : c.content;
+    const cost = truncated.length + 8;
+    if (used + cost > maxContextChars && accepted.length > 0) {
+      break;
+    }
+    accepted.push({ ...c, content: truncated });
+    used += cost;
+  }
+
+  // Dedupe by document so the user sees distinct docs in the source list.
+  const seenDocs = new Set<string>();
+  const dedupedSources: AIAnswerResult["sources"] = [];
+  for (const c of accepted) {
+    if (seenDocs.has(c.documentId)) {
+      continue;
+    }
+    seenDocs.add(c.documentId);
+    dedupedSources.push({
+      id: c.documentId,
+      title: c.documentTitle,
+      url: c.documentUrl,
+      snippet: c.content.slice(0, 200),
+    });
+  }
+
+  const contextBlock = accepted
+    .map((c, i) => {
+      const headingLine = c.heading
+        ? ` (heading: "${c.heading}")`
+        : "";
+      return `[${i + 1}]${headingLine} Title: ${c.documentTitle}\nContent: ${c.content}\n---\n`;
+    })
     .join("\n");
 
-  const systemPrompt = `You are an AI assistant for a team's knowledge base (Outline). Answer the user's question based ONLY on the provided document context. If the answer is not in the context, say so. Be concise and direct. Cite sources using [N] notation matching the document numbers. Respond in the same language as the user's question.`;
+  const systemPrompt = `You are an AI assistant for a team's knowledge base (Outline). Answer the user's question based ONLY on the provided chunk context. Each chunk is prefixed with [N] — cite sources by referencing those numbers (e.g. "see [1]"). If the answer is not in the context, say so. Be concise and direct. Respond in the same language as the user's question.`;
 
   const userPrompt = `Context from the team's knowledge base:\n\n${contextBlock}\n\nQuestion: ${query}`;
 
   const { content, tokensUsed } = await callChatCompletions(
     status.model,
     systemPrompt,
-    userPrompt,
+    userPrompt
   );
 
   return {
     answer: content,
-    sources: documents.map((d) => ({
-      id: d.id,
-      title: d.title,
-      url: `/doc/${d.id}`,
-      snippet: d.text.slice(0, 200),
-    })),
+    sources: dedupedSources,
     tokensUsed,
   };
 }

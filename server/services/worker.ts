@@ -6,6 +6,7 @@ import { traceFunction } from "@server/logging/tracing";
 import HealthMonitor from "@server/queues/HealthMonitor";
 import type { Event } from "@server/types";
 import { initI18n } from "@server/utils/i18n";
+import initEmbeddingService from "@server/services/embeddings";
 import {
   globalEventQueue,
   processorEventQueue,
@@ -17,6 +18,7 @@ import tasks from "../queues/tasks";
 
 export default async function init() {
   await initI18n();
+  await initEmbeddingService();
 
   // This queue processes the global event bus
   globalEventQueue()

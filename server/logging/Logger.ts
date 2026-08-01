@@ -23,6 +23,10 @@ type LogCategory =
   | "websockets"
   | "database"
   | "utils"
+  | "embedding"
+  | "embedding-cron"
+  | "rag"
+  | "ai"
   | "plugins";
 
 // oxlint-disable-next-line @typescript-eslint/no-explicit-any

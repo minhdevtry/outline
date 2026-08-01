@@ -80,3 +80,9 @@ export { default as Emoji } from "./Emoji";
 export { default as UserPasskey } from "./UserPasskey";
 
 export { default as AccessRequest } from "./AccessRequest";
+
+export { default as DocumentChunk } from "./DocumentChunk";
+
+export { default as EmbeddingJob } from "./EmbeddingJob";
+
+export { default as EmbeddingKey } from "./EmbeddingKey";

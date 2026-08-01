@@ -597,6 +597,28 @@ export class Environment {
   public AI_MAX_CONTEXT_DOCS = Number(environment.AI_MAX_CONTEXT_DOCS ?? 5);
 
   /**
+   * Approximate total token budget for the joined context passed to the
+   * chat-completions model. RAG chunks beyond this are dropped, lowest
+   * relevance first. Default 6000 tokens (≈ 24 KB of text).
+   */
+  @IsOptional()
+  @IsNumber()
+  public AI_MAX_CONTEXT_TOKENS = Number(
+    environment.AI_MAX_CONTEXT_TOKENS ?? 6000
+  );
+
+  /**
+   * Token-bucket rate (per second) applied per-team against the Mistral
+   * embeddings endpoint. The free tier allows ~1 req/s per key; with N
+   * valid keys the effective throughput is N × this rate.
+   */
+  @IsOptional()
+  @IsNumber()
+  public MISTRAL_RATE_PER_SECOND = Number(
+    environment.MISTRAL_RATE_PER_SECOND ?? 1
+  );
+
+  /**
    * Set max allowed requests in a given duration for default rate limiter to
    * trigger throttling, per IP address.
    */

@@ -17,6 +17,7 @@ import Tooltip from "~/components/Tooltip";
 import CopyToClipboard from "~/components/CopyToClipboard";
 import NudeButton from "~/components/NudeButton";
 import { useTheme } from "styled-components";
+import styled from "styled-components";
 
 function Features() {
   const { t } = useTranslation();
@@ -197,8 +198,166 @@ function Features() {
           disabled={!aiConfigured}
         />
       </SettingRow>
+
+      {team.aiEnabled && aiConfigured && <EmbeddingStatusPanel />}
     </Scene>
   );
 }
+
+/**
+ * Live status panel for the RAG embedding pipeline. Polls
+ * `/api/ai.embeddingStatus` and shows counts (indexed / in-progress /
+ * pending / failed) plus the active local model. When there is pending
+ * work the panel polls every 3s; otherwise every 30s.
+ */
+const EmbeddingStatusPanel = observer(function EmbeddingStatusPanel() {
+  const { t } = useTranslation();
+  const [stats, setStats] = React.useState<{
+    indexed: number;
+    in_progress: number;
+    pending: number;
+    failed: number;
+    totalDocuments: number;
+    indexedDocuments: number;
+    embeddingModel: string;
+  } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const res = (await client.post("/ai.embeddingStatus", {})) as {
+        data?: typeof stats;
+      };
+      setStats(res.data ?? null);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refresh();
+    const interval = stats && (stats.pending > 0 || stats.in_progress > 0 || stats.failed > 0) ? 3000 : 30000;
+    const id = setInterval(() => void refresh(), interval);
+    return () => clearInterval(id);
+  }, [refresh, stats?.pending, stats?.in_progress, stats?.failed]);
+
+  if (error) {
+    return (
+      <SettingRow
+        name="embeddingStatus"
+        label={t("Embeddings")}
+        description={t("Status unavailable: {{error}}", { error })}
+        border={false}
+      >
+        <span />
+      </SettingRow>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <SettingRow
+        name="embeddingStatus"
+        label={t("Embeddings")}
+        description={t("Loading...")}
+        border={false}
+      >
+        <span />
+      </SettingRow>
+    );
+  }
+
+  const description = (
+    <>
+      <Text type="secondary" as="p">
+        {t(
+          "Local embedding model: {{model}}. {{indexed}} of {{total}} documents indexed.",
+          {
+            model: stats.embeddingModel,
+            indexed: stats.indexedDocuments,
+            total: stats.totalDocuments,
+          }
+        )}
+      </Text>
+      <Text type="secondary" as="p" style={{ marginTop: 6 }}>
+        {t(
+          "New documents are indexed automatically within a few minutes of editing. Failed jobs ({{failed}}) can be re-tried by editing the document or waiting for the nightly cron.",
+          { failed: stats.failed }
+        )}
+      </Text>
+    </>
+  );
+
+  return (
+    <SettingRow
+      name="embeddingStatus"
+      label={t("Embeddings")}
+      description={description}
+      border={false}
+    >
+      <StatusList>
+        <StatusPill $kind="ok">
+          {t("Indexed")} · {stats.indexed}
+        </StatusPill>
+        {stats.in_progress > 0 ? (
+          <StatusPill $kind="progress">
+            {t("In progress")} · {stats.in_progress}
+          </StatusPill>
+        ) : null}
+        {stats.pending > 0 ? (
+          <StatusPill $kind="pending">
+            {t("Pending")} · {stats.pending}
+          </StatusPill>
+        ) : null}
+        {stats.failed > 0 ? (
+          <StatusPill $kind="error">
+            {t("Failed")} · {stats.failed}
+          </StatusPill>
+        ) : null}
+      </StatusList>
+    </SettingRow>
+  );
+});
+
+const StatusList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+`;
+
+const StatusPill = styled.span<{ $kind: "ok" | "progress" | "pending" | "error" }>`
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: ${(props) => {
+    switch (props.$kind) {
+      case "ok":
+        return props.theme.accentText ?? "#fff";
+      case "progress":
+        return props.theme.text;
+      case "pending":
+        return props.theme.textSecondary;
+      case "error":
+        return props.theme.text;
+    }
+  }};
+  background: ${(props) => {
+    switch (props.$kind) {
+      case "ok":
+        return props.theme.accent;
+      case "progress":
+        return props.theme.backgroundSecondary;
+      case "pending":
+        return props.theme.backgroundSecondary;
+      case "error":
+        return "#fee";
+    }
+  }};
+`;
 
 export default observer(Features);
