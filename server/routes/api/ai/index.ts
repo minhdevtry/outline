@@ -1,5 +1,6 @@
 import Router from "koa-router";
 import { z } from "zod";
+import { UserRole } from "@shared/types";
 import auth from "@server/middlewares/authentication";
 import { rateLimiter } from "@server/middlewares/rateLimiter";
 import { Team, User } from "@server/models";
@@ -37,7 +38,7 @@ router.post("ai.status", auth(), async (ctx: APIContext) => {
 router.post(
   "ai.answer",
   auth(),
-  rateLimiter({ requests: 30, durationWindowInSeconds: 60 }),
+  rateLimiter({ requests: 30, duration: 60 }),
   async (ctx: APIContext) => {
     const { user } = ctx.state.auth;
     const body = AiAnswerSchema.parse(ctx.request.body);
@@ -57,7 +58,7 @@ router.post(
  */
 router.post("ai.toggle", auth(), async (ctx: APIContext) => {
   const { user } = ctx.state.auth;
-  if (user.role !== "admin" && user.role !== "owner") {
+  if (user.role !== UserRole.Admin) {
     ctx.throw(403, "Only admins can change AI settings");
   }
   const body = AiToggleSchema.parse(ctx.request.body);

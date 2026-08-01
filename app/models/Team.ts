@@ -71,6 +71,14 @@ class Team extends Model {
 
   @Field
   @observable
+  aiEnabled: boolean;
+
+  @Field
+  @observable
+  aiModel: string | null;
+
+  @Field
+  @observable
   preferences: TeamPreferences | null;
 
   @observable

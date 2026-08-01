@@ -1,4 +1,5 @@
 import { observer } from "mobx-react";
+import { SparklesIcon } from "outline-icons";
 import { v4 as uuidv4 } from "uuid";
 import queryString from "query-string";
 import * as React from "react";
@@ -24,6 +25,7 @@ import Scene from "~/components/Scene";
 import Switch from "~/components/Switch";
 import Text from "~/components/Text";
 import env from "~/env";
+import useCurrentTeam from "~/hooks/useCurrentTeam";
 import usePaginatedRequest from "~/hooks/usePaginatedRequest";
 import useQuery from "~/hooks/useQuery";
 import useStores from "~/hooks/useStores";
@@ -31,6 +33,7 @@ import type { PaginationParams, SearchResult } from "~/types";
 import { preventDefault } from "~/utils/events";
 import { searchPath } from "~/utils/routeHelpers";
 import { decodeURIComponentSafe, isTruthyQueryValue } from "~/utils/urls";
+import AIAnswerPanel from "./components/AIAnswerPanel";
 import CollectionFilter from "./components/CollectionFilter";
 import DateFilter from "./components/DateFilter";
 import { DocumentFilter } from "./components/DocumentFilter";
@@ -46,6 +49,8 @@ function Search() {
   const { t } = useTranslation();
   const { documents, searches } = useStores();
   const isMobile = useMobile();
+  const team = useCurrentTeam();
+  const [aiPanelOpen, setAiPanelOpen] = React.useState(false);
 
   // routing
   const params = useQuery();
@@ -325,6 +330,17 @@ function Search() {
                   inForm={false}
                 />
               )}
+              {!!query && team?.aiEnabled && (
+                <AIButton
+                  type="button"
+                  onClick={() => setAiPanelOpen((v) => !v)}
+                  $active={aiPanelOpen}
+                  aria-pressed={aiPanelOpen}
+                >
+                  <SparklesIcon size={14} />
+                  <span>{t("AI Answer")}</span>
+                </AIButton>
+              )}
             </Flex>
             {isMobile ? null : sortInput}
           </Filters>
@@ -352,6 +368,13 @@ function Search() {
                 </Centered>
               </Fade>
             ) : null}
+            {!!query && team?.aiEnabled && (
+              <AIAnswerPanel
+                query={query}
+                visible={aiPanelOpen}
+                onClose={() => setAiPanelOpen(false)}
+              />
+            )}
             <ResultList column>
               <StyledArrowKeyNavigation
                 ref={resultListRef}
@@ -429,6 +452,30 @@ const SearchTitlesFilter = styled(Switch)`
   font-size: 14px;
   font-weight: 400;
   height: 28px;
+`;
+
+const AIButton = styled.button<{ $active: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 4px;
+  border: 1px solid
+    ${(props) => (props.$active ? props.theme.accent : props.theme.divider)};
+  background: ${(props) =>
+    props.$active ? props.theme.accent : "transparent"};
+  color: ${(props) => (props.$active ? "#fff" : props.theme.textSecondary)};
+  cursor: pointer;
+  transition: all 100ms ease-in-out;
+
+  &:hover {
+    border-color: ${(props) => props.theme.accent};
+    color: ${(props) => (props.$active ? "#fff" : props.theme.text)};
+  }
 `;
 
 export default observer(Search);

@@ -21,6 +21,36 @@ function Features() {
   const { t } = useTranslation();
   const team = useCurrentTeam();
   const theme = useTheme();
+  const [aiConfigured, setAiConfigured] = React.useState<boolean | null>(null);
+
+  // Fetch whether the server is configured for AI Answer (OPENAI_API_KEY set).
+  // The toggle is disabled until that is true; it stays enabled per-team from
+  // then on and persists via the ai.toggle endpoint.
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/ai.status", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) {
+          return;
+        }
+        const json = await res.json();
+        if (!cancelled) {
+          setAiConfigured(!!json?.data?.configured);
+        }
+      } catch {
+        // ignore — toggle will remain disabled
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleMCPChange = React.useCallback(
     async (checked: boolean) => {
@@ -42,6 +72,31 @@ function Features() {
     await team.save();
     toast.success(t("Settings saved"));
   }, [team, t]);
+
+  const handleAIEnabledChange = React.useCallback(
+    async (checked: boolean) => {
+      try {
+        const res = await fetch("/api/ai.toggle", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ aiEnabled: checked }),
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const json = await res.json();
+        team.aiEnabled = !!json?.data?.aiEnabled;
+        if (json?.data?.aiModel !== undefined) {
+          team.aiModel = json.data.aiModel;
+        }
+        toast.success(t("Settings saved"));
+      } catch (err) {
+        toast.error(t("Failed to update AI settings"));
+      }
+    },
+    [team, t]
+  );
 
   const handleCopied = React.useCallback(() => {
     toast.success(t("Copied to clipboard"));
@@ -143,11 +198,17 @@ function Features() {
         name="answers"
         label={t("AI answers")}
         description={t(
-          "Use AI to get direct answers to questions in search. This feature requires a paid license."
+          "Use AI to get direct answers to questions in search. Configure the API in your server .env (OPENAI_API_KEY and AI_API_BASE_URL) to enable."
         )}
         border={false}
       >
-        <Switch disabled />
+        <Switch
+          id="aiEnabled"
+          name="aiEnabled"
+          checked={team.aiEnabled ?? false}
+          onChange={handleAIEnabledChange}
+          disabled={!aiConfigured}
+        />
       </SettingRow>
     </Scene>
   );

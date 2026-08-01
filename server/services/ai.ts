@@ -19,6 +19,23 @@ export interface AIConfigStatus {
   reason?: string;
 }
 
+const DEFAULT_BASE_URL = "https://api.openai.com";
+const DEFAULT_MODEL = "gpt-4o-mini";
+
+/**
+ * Returns the configured AI base URL, defaulting to the public OpenAI API.
+ */
+function getBaseUrl(): string {
+  return (env.AI_API_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+}
+
+/**
+ * Returns the configured AI model, defaulting to gpt-4o-mini.
+ */
+function getDefaultModel(): string {
+  return env.OPENAI_MODEL ?? DEFAULT_MODEL;
+}
+
 /**
  * Check if AI Answer is configured and available for a team.
  */
@@ -26,22 +43,23 @@ export function getAIStatus(team: Team): AIConfigStatus {
   if (!env.OPENAI_API_KEY) {
     return {
       configured: false,
-      model: env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: getDefaultModel(),
       teamEnabled: false,
       reason: "OPENAI_API_KEY not set on server",
     };
   }
+  const model = team.aiModel ?? getDefaultModel();
   if (!team.aiEnabled) {
     return {
       configured: true,
-      model: team.aiModel ?? env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model,
       teamEnabled: false,
       reason: "AI is not enabled for this team (admin can enable in settings)",
     };
   }
   return {
     configured: true,
-    model: team.aiModel ?? env.OPENAI_MODEL ?? "gpt-4o-mini",
+    model,
     teamEnabled: true,
   };
 }
@@ -82,15 +100,20 @@ async function getRelevantDocuments(
 }
 
 /**
- * Call OpenAI Chat Completions API to answer a question using Outline
- * documents as context.
+ * Call an OpenAI/Anthropic-compatible Chat Completions endpoint to answer a
+ * question using Outline documents as context. Honors AI_API_BASE_URL when set
+ * so the same client works against OpenAI, an internal LLM gateway, or any
+ * proxy that speaks the OpenAI Chat Completions wire format.
  */
-async function callOpenAI(
+async function callChatCompletions(
   model: string,
   systemPrompt: string,
   userPrompt: string,
 ): Promise<{ content: string; tokensUsed: number }> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/v1/chat/completions`;
+
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -109,7 +132,7 @@ async function callOpenAI(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} ${err}`);
+    throw new Error(`AI API error: ${response.status} ${err}`);
   }
 
   const data = await response.json();
@@ -162,7 +185,7 @@ export async function answerQuestion(
 
   const userPrompt = `Context from the team's knowledge base:\n\n${contextBlock}\n\nQuestion: ${query}`;
 
-  const { content, tokensUsed } = await callOpenAI(
+  const { content, tokensUsed } = await callChatCompletions(
     status.model,
     systemPrompt,
     userPrompt,

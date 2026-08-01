@@ -561,17 +561,32 @@ export class Environment {
   );
 
   /**
-   * OpenAI API key used for AI Answer feature. If unset, AI Answer is disabled
+   * AI API key used for AI Answer feature. If unset, AI Answer is disabled
    * even if a team has it enabled in their settings.
    */
   public OPENAI_API_KEY = this.toOptionalString(environment.OPENAI_API_KEY);
 
   /**
-   * OpenAI model to use for AI Answer. Defaults to gpt-4o-mini for cost.
+   * AI model to use for AI Answer. Defaults to gpt-4o-mini for cost.
+   * Can be any model name accepted by the configured AI endpoint.
    */
   public OPENAI_MODEL = this.toOptionalString(
     environment.OPENAI_MODEL ?? "gpt-4o-mini"
   );
+
+  /**
+   * Base URL for an Anthropic-compatible AI endpoint. When set, AI Answer will
+   * call {AI_API_BASE_URL}/v1/chat/completions instead of the default OpenAI
+   * URL. Use this to point Outline at a self-hosted LLM gateway, a proxy, or
+   * any other service that speaks the OpenAI Chat Completions wire format.
+   */
+  @IsOptional()
+  @IsUrl({
+    protocols: ["http", "https"],
+    require_protocol: true,
+    require_tld: false,
+  })
+  public AI_API_BASE_URL = this.toOptionalString(environment.AI_API_BASE_URL);
 
   /**
    * Maximum number of documents to include as context when answering a
