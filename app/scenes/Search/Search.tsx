@@ -50,7 +50,10 @@ function Search() {
   const { documents, searches } = useStores();
   const isMobile = useMobile();
   const team = useCurrentTeam();
-  const [aiPanelOpen, setAiPanelOpen] = React.useState(false);
+  // AI Answer panel is now opened by default as soon as the user has a query
+  // long enough to be meaningful. The user can close it (sticky across the
+  // session) or re-open it via the ✨ AI Answer button in the filters row.
+  const [aiPanelOpen, setAiPanelOpen] = React.useState(true);
 
   // routing
   const params = useQuery();
