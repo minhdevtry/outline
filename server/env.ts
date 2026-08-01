@@ -561,6 +561,27 @@ export class Environment {
   );
 
   /**
+   * OpenAI API key used for AI Answer feature. If unset, AI Answer is disabled
+   * even if a team has it enabled in their settings.
+   */
+  public OPENAI_API_KEY = this.toOptionalString(environment.OPENAI_API_KEY);
+
+  /**
+   * OpenAI model to use for AI Answer. Defaults to gpt-4o-mini for cost.
+   */
+  public OPENAI_MODEL = this.toOptionalString(
+    environment.OPENAI_MODEL ?? "gpt-4o-mini"
+  );
+
+  /**
+   * Maximum number of documents to include as context when answering a
+   * question with AI.
+   */
+  @IsOptional()
+  @IsNumber()
+  public AI_MAX_CONTEXT_DOCS = Number(environment.AI_MAX_CONTEXT_DOCS ?? 5);
+
+  /**
    * Set max allowed requests in a given duration for default rate limiter to
    * trigger throttling, per IP address.
    */

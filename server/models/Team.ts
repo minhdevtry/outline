@@ -215,6 +215,14 @@ class Team extends ParanoidModel<
   @Column(DataType.BOOLEAN)
   memberTeamCreate: boolean;
 
+  @Default(false)
+  @Column(DataType.BOOLEAN)
+  aiEnabled: boolean;
+
+  @AllowNull
+  @Column(DataType.STRING)
+  aiModel: string | null;
+
   @Default(UserRole.Member)
   @IsIn([[UserRole.Viewer, UserRole.Member]])
   @Column(DataType.STRING)

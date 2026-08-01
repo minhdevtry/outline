@@ -8,16 +8,21 @@ const shared = {
   database: process.env.DATABASE_NAME,
 };
 
+// When PGSSLMODE=disable, don't configure SSL at all
+const sslEnabled = process.env.PGSSLMODE !== "disable";
+
 module.exports = {
   development: shared,
   test: shared,
   "production-ssl-disabled": shared,
-  production: {
-    ...shared,
-    dialectOptions: {
-      ssl: {
-        rejectUnauthorized: false,
-      },
-    },
-  },
+  production: sslEnabled
+    ? {
+        ...shared,
+        dialectOptions: {
+          ssl: {
+            rejectUnauthorized: false,
+          },
+        },
+      }
+    : shared,
 };
