@@ -8,6 +8,7 @@ import Text from "~/components/Text";
 import LoadingIndicator from "~/components/LoadingIndicator";
 import { s } from "@shared/styles";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
+import { client } from "~/utils/ApiClient";
 
 interface Source {
   id: string;
@@ -53,21 +54,8 @@ function AIAnswerPanel({ query, visible, onClose }: Props) {
     setError(null);
     setAnswer(null);
     try {
-      const res = await fetch("/api/ai.answer", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ query }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-      const json = await res.json();
-      setAnswer(json.data as Answer);
+      const json = (await client.post("/ai.answer", { query })) as { data?: Answer };
+      setAnswer((json.data as Answer) ?? null);
       setState("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

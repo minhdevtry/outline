@@ -10,6 +10,7 @@ import Scene from "~/components/Scene";
 import Switch from "~/components/Switch";
 import Text from "~/components/Text";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
+import { client } from "~/utils/ApiClient";
 import SettingRow from "./components/SettingRow";
 import Input from "~/components/Input";
 import Tooltip from "~/components/Tooltip";
@@ -30,16 +31,9 @@ function Features() {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/ai.status", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({}),
-        });
-        if (!res.ok) {
-          return;
-        }
-        const json = await res.json();
+        const json = (await client.post("/ai.status", {})) as {
+          data?: { configured?: boolean };
+        };
         if (!cancelled) {
           setAiConfigured(!!json?.data?.configured);
         }
@@ -76,16 +70,9 @@ function Features() {
   const handleAIEnabledChange = React.useCallback(
     async (checked: boolean) => {
       try {
-        const res = await fetch("/api/ai.toggle", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ aiEnabled: checked }),
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const json = await res.json();
+        const json = (await client.post("/ai.toggle", { aiEnabled: checked })) as {
+          data?: { aiEnabled?: boolean; aiModel?: string | null };
+        };
         team.aiEnabled = !!json?.data?.aiEnabled;
         if (json?.data?.aiModel !== undefined) {
           team.aiModel = json.data.aiModel;
