@@ -1,6 +1,7 @@
 import invariant from "invariant";
 import { lowerFirst } from "es-toolkit/compat";
 import pluralize from "pluralize";
+import AgentStore from "./AgentStore";
 import ApiKeysStore from "./ApiKeysStore";
 import AuthStore from "./AuthStore";
 import AuthenticationProvidersStore from "./AuthenticationProvidersStore";
@@ -45,6 +46,8 @@ export default class RootStore {
   groupMemberships: GroupMembershipsStore;
   comments: CommentsStore;
   dialogs: DialogsStore;
+
+  agent: AgentStore;
   documents: DocumentsStore;
   emojis: EmojisStore;
   events: EventsStore;
@@ -109,6 +112,7 @@ export default class RootStore {
     // Non-models
     this.registerStore(DocumentPresenceStore, "presence");
     this.registerStore(DialogsStore, "dialogs");
+    this.registerStore(AgentStore, "agent");
     this.registerStore(UiStore, "ui");
 
     // AuthStore must be initialized last as it makes use of the other stores.

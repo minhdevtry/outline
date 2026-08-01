@@ -9,6 +9,7 @@ import { answerQuestion, getAIStatus } from "@server/services/ai";
 import { APIContext } from "@server/types";
 import { getActiveEmbeddingModel } from "@server/utils/embeddings/mistral";
 import FullReindexTeamTask from "@server/queues/tasks/FullReindexTeamTask";
+import agentRouter from "./agent";
 
 const router = new Router();
 
@@ -157,5 +158,8 @@ router.post(
     ctx.body = { data: { success: true } };
   }
 );
+
+// Agent routes (streaming SSE for the right-rail AI Agent)
+router.use("/", agentRouter.routes());
 
 export default router;
