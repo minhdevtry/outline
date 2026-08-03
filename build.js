@@ -56,13 +56,13 @@ async function build() {
     const hasServer = existsSync(`./plugins/${plugin}/server`);
 
     if (hasServer) {
-      await swc(`./plugins/${plugin}/server`, "./build/plugins");
+      await swc(`plugins/${plugin}/server`, "./build/plugins");
     }
 
     const hasShared = existsSync(`./plugins/${plugin}/shared`);
 
     if (hasShared) {
-      await swc(`./plugins/${plugin}/shared`, "./build/plugins");
+      await swc(`plugins/${plugin}/shared`, "./build/plugins");
     }
   }
 

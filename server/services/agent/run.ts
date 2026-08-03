@@ -74,9 +74,224 @@ export async function* runAgent(
     yield { type: "step_start", step };
 
     // Stream from upstream
-    const url = `${(env.AI_API_BASE_URL ?? "https://api.openai.com").replace(/\/$/, "")}/v1/chat/completions`;
-    const model = env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const baseUrl = (env.AI_API_BASE_URL ?? "https://api.openai.com").replace(
+      /\/$/,
+      ""
+    );
+    const model = opts.model ?? env.OPENAI_MODEL ?? "MiniMax-M3";
 
+    // Try Anthropic Messages API (/v1/messages) first as preferred by local MiniMax proxy
+    const anthropicRes = await fetch(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": env.OPENAI_API_KEY ?? "",
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        messages: messages
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role === "tool" ? "user" : m.role,
+            content:
+              (m as { anthropicContent?: unknown }).anthropicContent ??
+              m.content ??
+              "",
+          })),
+        system: messages.find((m) => m.role === "system")?.content,
+        tools: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          input_schema: t.parameters,
+        })),
+        stream: true,
+        max_tokens: 2000,
+        temperature: 0.3,
+      }),
+      signal: opts.signal,
+    }).catch(() => null);
+
+    if (anthropicRes && !anthropicRes.ok) {
+      const errText = await anthropicRes.text().catch(() => "");
+      Logger.error(
+        `Anthropic LLM step ${step} error: ${anthropicRes.status} ${errText.slice(0, 300)}`,
+        new Error(`anthropic_${anthropicRes.status}`)
+      );
+    }
+
+    if (anthropicRes && anthropicRes.ok && anthropicRes.body) {
+      const reader = anthropicRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let hasEmittedDelta = false;
+      const anthropicTools = new Map<
+        string,
+        { name: string; inputJson: string }
+      >();
+      let currentBlockId = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+          for (const evt of events) {
+            const lines = evt.split("\n");
+            let eventType = "";
+            let data = "";
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+              }
+              if (line.startsWith("data: ")) {
+                data = line.slice(6);
+              }
+            }
+            if (!eventType || !data) {
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(data) as {
+                type?: string;
+                content_block?: { type?: string; id?: string; name?: string };
+                delta?: {
+                  type?: string;
+                  text?: string;
+                  partial_json?: string;
+                };
+              };
+
+              if (eventType === "content_block_start" && parsed.content_block) {
+                if (
+                  parsed.content_block.type === "tool_use" &&
+                  parsed.content_block.id
+                ) {
+                  currentBlockId = parsed.content_block.id;
+                  anthropicTools.set(currentBlockId, {
+                    name: parsed.content_block.name ?? "",
+                    inputJson: "",
+                  });
+                }
+              } else if (eventType === "content_block_delta" && parsed.delta) {
+                if (
+                  parsed.delta.type === "text_delta" &&
+                  parsed.delta.text
+                ) {
+                  hasEmittedDelta = true;
+                  yield { type: "text_delta", delta: parsed.delta.text };
+                } else if (
+                  parsed.delta.type === "input_json_delta" &&
+                  parsed.delta.partial_json &&
+                  currentBlockId
+                ) {
+                  const existing = anthropicTools.get(currentBlockId);
+                  if (existing) {
+                    existing.inputJson += parsed.delta.partial_json;
+                  }
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+      } catch {
+        // stream interrupted
+      }
+
+      if (anthropicTools.size > 0) {
+        const teamUser = (await User.findByPk(opts.user.id, {
+          include: [{ model: Team, as: "team" }],
+        })) as User & { team: Team };
+
+        for (const [id, tc] of anthropicTools.entries()) {
+          let parsedArgs: Record<string, unknown> = {};
+          try {
+            parsedArgs = tc.inputJson ? JSON.parse(tc.inputJson) : {};
+          } catch {
+            parsedArgs = { _raw: tc.inputJson };
+          }
+
+          yield { type: "tool_call_start", id, name: tc.name };
+          yield { type: "tool_call_end", id, args: parsedArgs };
+
+          const handler = findToolHandler(tc.name);
+          if (!handler) {
+            const errRes = { ok: false, error: `Unknown tool: ${tc.name}` };
+            yield {
+              type: "tool_result",
+              id,
+              result: errRes,
+              is_error: true,
+            };
+            messages.push({
+              role: "assistant",
+              content: `Called tool ${tc.name} with ${JSON.stringify(parsedArgs)}`,
+            });
+            messages.push({
+              role: "user",
+              content: `Tool ${tc.name} result:\n${JSON.stringify(errRes)}`,
+            });
+            continue;
+          }
+
+          try {
+            const result = await handler(parsedArgs, {
+              user: teamUser,
+              team: teamUser.team,
+            });
+            yield {
+              type: "tool_result",
+              id,
+              result,
+              is_error: Boolean(
+                result && typeof result === "object" && "error" in result
+              ),
+            };
+            messages.push({
+              role: "assistant",
+              content: `Called tool ${tc.name} with ${JSON.stringify(parsedArgs)}`,
+            });
+            messages.push({
+              role: "user",
+              content: `Tool ${tc.name} result:\n${JSON.stringify(result ?? null)}`,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const errRes = { ok: false, error: message };
+            yield {
+              type: "tool_result",
+              id,
+              result: errRes,
+              is_error: true,
+            };
+            messages.push({
+              role: "assistant",
+              content: `Called tool ${tc.name} with ${JSON.stringify(parsedArgs)}`,
+            });
+            messages.push({
+              role: "user",
+              content: `Tool ${tc.name} result:\n${JSON.stringify(errRes)}`,
+            });
+          }
+        }
+        yield { type: "step_end", step, stop_reason: "tool_use" };
+        continue;
+      }
+
+      if (hasEmittedDelta) {
+        yield { type: "step_end", step, stop_reason: "stop" };
+        yield { type: "done" };
+        return;
+      }
+    }
+
+    const url = `${baseUrl}/v1/chat/completions`;
     const upstream = await fetch(url, {
       method: "POST",
       headers: {
@@ -95,225 +310,234 @@ export async function* runAgent(
           },
         })),
         tool_choice: step === 0 ? "auto" : "auto",
-        stream: true,
-        stream_options: { include_usage: true },
+        stream: false,
         temperature: 0.3,
         max_tokens: 1500,
       }),
       signal: opts.signal,
-    });
+    }).catch(() => null);
 
-    if (!upstream.ok || !upstream.body) {
-      const errText = await upstream.text().catch(() => "");
-      Logger.error(
-        `Upstream LLM error: ${upstream.status} ${errText.slice(0, 200)}`,
-        new Error(`upstream ${upstream.status}`)
-      );
+    if (!upstream || !upstream.ok) {
       yield {
         type: "error",
-        message: `LLM upstream returned ${upstream.status}`,
+        message: `Hệ thống AI hiện đang tạm thời gián đoạn từ nhà cung cấp model. Vui lòng thử lại sau giây lát.`,
         code: "upstream_error",
       };
       return;
     }
 
-    // Parse SSE: each event is "data: {json}\n\n"
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finishReason: string | null = null;
-    const assistantToolCalls: Array<{
-      id: string;
-      name: string;
-      arguments: string;
-    }> = [];
-    const toolCallAccum = new Map<
-      number,
-      { id: string; name: string; arguments: string }
-    >();
-    let usage: { input_tokens: number; output_tokens: number } | undefined;
+    const json = (await upstream.json().catch(() => ({}))) as {
+      choices?: Array<{
+        message?: {
+          role?: string;
+          content?: string | null;
+          tool_calls?: Array<{
+            id: string;
+            type: "function";
+            function: { name: string; arguments: string };
+          }>;
+        };
+        finish_reason?: string;
+      }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
 
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          break;
-        }
-        buffer += decoder.decode(value, {stream: true});
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) {
-            continue;
-          }
-          const payload = trimmed.slice(6);
-          if (payload === "[DONE]") {
-            continue;
-          }
-          let chunk: UpstreamChunk;
-          try {
-            chunk = JSON.parse(payload);
-          } catch {
-            continue;
-          }
-          if (chunk.usage) {
-            usage = {
-              input_tokens: chunk.usage.prompt_tokens ?? 0,
-              output_tokens: chunk.usage.completion_tokens ?? 0,
-            };
-          }
-          const choice = chunk.choices?.[0];
-          if (!choice) {
-            continue;
-          }
-          const delta = choice.delta;
-          if (delta?.content) {
-            yield { type: "text_delta", delta: delta.content };
-          }
-          if (delta?.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx = tc.index;
-              const acc = toolCallAccum.get(idx) ?? {
-                id: "",
-                name: "",
-                arguments: "",
-              };
-              if (tc.id) {
-                acc.id = tc.id;
-              }
-              if (tc.function?.name) {
-                acc.name = tc.function.name;
-              }
-              if (tc.function?.arguments) {
-                acc.arguments += tc.function.arguments;
-              }
-              toolCallAccum.set(idx, acc);
-            }
-          }
-          if (choice.finish_reason) {
-            finishReason = choice.finish_reason;
-          }
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Logger.error(`Stream read failed: ${msg}`, err as Error);
-      yield { type: "error", message: "stream interrupted" };
-      return;
+    const choice = json.choices?.[0];
+    const assistantMsg = choice?.message;
+
+    if (assistantMsg?.content) {
+      yield { type: "text_delta", delta: assistantMsg.content };
     }
 
-    // Collect tool calls and emit start/end events
     const finalToolCalls: Array<{
       id: string;
       name: string;
       args: Record<string, unknown>;
     }> = [];
-    for (const acc of toolCallAccum.values()) {
-      if (!acc.id || !acc.name) {
-        continue;
+
+    if (assistantMsg?.tool_calls) {
+      for (const tc of assistantMsg.tool_calls) {
+        if (!tc.id || !tc.function?.name) {
+          continue;
+        }
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = tc.function.arguments
+            ? JSON.parse(tc.function.arguments)
+            : {};
+        } catch {
+          parsed = { _raw: tc.function.arguments };
+        }
+        finalToolCalls.push({
+          id: tc.id,
+          name: tc.function.name,
+          args: parsed,
+        });
       }
-      let parsed: Record<string, unknown> = {};
-      try {
-        parsed = acc.arguments ? JSON.parse(acc.arguments) : {};
-      } catch {
-        parsed = { _parseError: "malformed JSON", _raw: acc.arguments };
-      }
-      finalToolCalls.push({ id: acc.id, name: acc.name, args: parsed });
-    }
-    for (const tc of finalToolCalls) {
-      yield { type: "tool_call_start", id: tc.id, name: tc.name };
-      yield { type: "tool_call_end", id: tc.id, args: tc.args };
     }
 
-    // Push assistant message to the conversation for the next step
-    const assistantMsg: ChatMessage = { role: "assistant", content: null };
     if (finalToolCalls.length > 0) {
-      assistantMsg.tool_calls = finalToolCalls.map((tc) => ({
-        id: tc.id,
-        type: "function" as const,
-        function: {
-          name: tc.name,
-          arguments: JSON.stringify(tc.args),
-        },
-      }));
+      for (const tc of finalToolCalls) {
+        yield { type: "tool_call_start", id: tc.id, name: tc.name };
+        yield { type: "tool_call_end", id: tc.id, args: tc.args };
+      }
+
+      messages.push({
+        role: "assistant",
+        content: assistantMsg?.content ?? null,
+        tool_calls: assistantMsg?.tool_calls,
+      });
+
+      for (const tc of finalToolCalls) {
+        const handler = findToolHandler(tc.name);
+        if (!handler) {
+          const errRes = { ok: false, error: `Tool not found: ${tc.name}` };
+          yield {
+            type: "tool_result",
+            id: tc.id,
+            result: errRes,
+            is_error: true,
+          };
+          messages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            name: tc.name,
+            content: JSON.stringify(errRes),
+          });
+          continue;
+        }
+        try {
+          const teamUser = (await User.findByPk(opts.user.id, {
+            include: [{ model: Team, as: "team" }],
+          })) as User & { team: Team };
+          const result = await handler(tc.args, {
+            user: teamUser,
+            team: teamUser.team,
+          });
+          yield {
+            type: "tool_result",
+            id: tc.id,
+            result,
+            is_error: Boolean(
+              result && typeof result === "object" && "error" in result
+            ),
+          };
+          messages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            name: tc.name,
+            content: JSON.stringify(result),
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const errRes = { ok: false, error: msg };
+          yield {
+            type: "tool_result",
+            id: tc.id,
+            result: errRes,
+            is_error: true,
+          };
+          messages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            name: tc.name,
+            content: JSON.stringify(errRes),
+          });
+        }
+      }
+    } else {
+      if (assistantMsg?.content) {
+        messages.push({
+          role: "assistant",
+          content: assistantMsg.content,
+        });
+      }
     }
-    messages.push(assistantMsg);
+
+    const usage = json.usage
+      ? {
+          input_tokens: json.usage.prompt_tokens ?? 0,
+          output_tokens: json.usage.completion_tokens ?? 0,
+        }
+      : undefined;
 
     yield {
       type: "step_end",
       step,
-      stop_reason: finishReason ?? "stop",
+      stop_reason: choice?.finish_reason ?? "stop",
       usage,
     };
 
-    // If no tool calls, the agent is done.
-    if (finalToolCalls.length === 0 || finishReason === "stop") {
-      yield { type: "done" };
-      return;
-    }
-
-    // Execute the tool calls (in parallel) and append results.
-    const team = (await User.findByPk(opts.user.id, {
-      include: [{ model: Team, as: "team" }],
-    })) as User & { team: Team };
-
-    const toolResults = await Promise.all(
-      finalToolCalls.map(async (tc) => {
-        const handler = findToolHandler(tc.name);
-        if (!handler) {
-          return {
-            id: tc.id,
-            content: JSON.stringify({ error: `Unknown tool: ${tc.name}` }),
-            is_error: true,
-          };
-        }
-        try {
-          const result = await handler(tc.args, {
-            user: team,
-            team: team.team,
-          });
-          return {
-            id: tc.id,
-            content: JSON.stringify(result ?? null),
-            is_error: false,
-          };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          return {
-            id: tc.id,
-            content: JSON.stringify({ error: message }),
-            is_error: true,
-          };
-        }
-      })
-    );
-
-    // Yield each tool result to the client, then append to the
-    // conversation for the next LLM turn.
-    for (const r of toolResults) {
-      let parsed: unknown = r.content;
-      try {
-        parsed = JSON.parse(r.content);
-      } catch {
-        // keep as string
-      }
-      yield {
-        type: "tool_result",
-        id: r.id,
-        result: parsed,
-        is_error: r.is_error,
-      };
-    }
-    for (const r of toolResults) {
-      messages.push({
-        role: "tool",
-        tool_call_id: r.id,
-        content: r.content,
-      });
-    }
   }
 
   // Hit max steps
   yield { type: "error", message: "max_steps_exceeded" };
+}
+
+/**
+ * Fallback path: if the upstream LLM rejects the streaming request, retry
+ * once with `stream: false` and return the assembled assistant content as
+ * a single string. This is enough to keep the agent useful when the
+ * model server's streaming parser is broken (a known issue with the
+ * local MiniMax-M3 proxy that surfaces as
+ * "cannot access local variable 'yielded'" on every stream=true).
+ */
+async function tryNonStreamingFallback(
+  url: string,
+  model: string,
+  messages: ChatMessage[],
+  tools: Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+  }>,
+  signal: AbortSignal,
+  budgetMs = 8_000
+): Promise<string | null> {
+  // Compose the caller's abort signal with our own hard budget so a
+  // wedged upstream can't hold the SSE stream open past Cloudflare's
+  // 60s read limit. The caller still controls cancellation; we just
+  // add a fail-safe wall clock.
+  const fallbackAc = new AbortController();
+  const onCallerAbort = () => fallbackAc.abort();
+  signal.addEventListener("abort", onCallerAbort, { once: true });
+  const timer = setTimeout(() => fallbackAc.abort(), budgetMs);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        tools: tools.map((t) => ({
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          },
+        })),
+        tool_choice: "auto",
+        stream: false,
+        temperature: 0.3,
+        max_tokens: 1500,
+      }),
+      signal: fallbackAc.signal,
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    return json.choices?.[0]?.message?.content ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onCallerAbort);
+  }
 }

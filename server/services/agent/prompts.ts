@@ -4,11 +4,22 @@ import type { Team, User } from "@server/models";
  * Build the system prompt for the agent. The team's `guidanceMCP` field
  * (already a column) is treated as the per-team "extra rules" — typically
  * things like "always respond in Vietnamese" or "use the company voice".
+ *
+ * @param currentDocument Optional id and title of the document the user is
+ *   currently viewing. When set, a short block is added to the prompt so the
+ *   model can prefer that document for ambiguous requests. The full text is
+ *   not included — the model must call `read_document` to fetch it.
+ * @param skill Optional active skill. When set, its `systemPromptFragment`
+ *   is appended to the prompt and a one-line note tells the model which
+ *   persona is active.
  */
 export function buildAgentSystemPrompt(
   user: User,
   team: Team,
-  hasEmbeddings: boolean
+  hasEmbeddings: boolean,
+  currentDocument?: { id: string; title: string },
+  currentSelection?: { from: number; to: number; text: string },
+  skill?: { name: string; displayName: string; systemPromptFragment: string }
 ): string {
   const base = `You are Outline's built-in AI agent. You help the user manage their
 Markdown knowledge base: read documents, search the workspace using semantic + keyword
@@ -57,9 +68,50 @@ saving). Until then, \`search_documents\` may return no results — fall back to
 You are acting on behalf of: ${user.name} (${user.email})
 Team: ${team.name}`;
 
+  const documentContext = currentDocument
+    ? `
+
+The user is currently viewing a document:
+- Title: "${currentDocument.title}"
+- id: ${currentDocument.id}
+
+When the user's request is ambiguous, prefer acting on this document (e.g. summarizing
+or editing it) rather than searching the workspace. Call \`read_document\` to fetch
+its full text before any edit.`
+    : "";
+
+  const selectionContext = currentSelection
+    ? `
+
+The user has a text selection in the current document at positions ${currentSelection.from}-${currentSelection.to}.
+The selected text is:
+
+\`\`\`
+${currentSelection.text}
+\`\`\`
+
+When the user asks to act on "this", "the selection", or otherwise references content
+without naming it, treat this as the subject. To replace or remove it, call
+\`edit_document\` with this exact text as the \`searchText\` argument. To leave
+the surrounding prose untouched, prefer surgical edits.`
+    : "";
+
   const teamGuidance = team.guidanceMCP
     ? `\n\nTeam-specific guidance (from admin):\n${team.guidanceMCP}`
     : "";
 
-  return base + toolBlock + contextBlock + userBlock + teamGuidance;
+  const skillBlock = skill?.systemPromptFragment
+    ? `\n\nActive skill: "${skill.displayName}" (id: ${skill.name}).\n\n${skill.systemPromptFragment}`
+    : "";
+
+  return (
+    base +
+    toolBlock +
+    contextBlock +
+    userBlock +
+    documentContext +
+    selectionContext +
+    teamGuidance +
+    skillBlock
+  );
 }

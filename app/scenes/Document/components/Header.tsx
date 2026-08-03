@@ -1,5 +1,5 @@
 import { observer } from "mobx-react";
-import { TableOfContentsIcon, EditIcon } from "outline-icons";
+import { TableOfContentsIcon, EditIcon, SparklesIcon } from "outline-icons";
 import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -29,6 +29,7 @@ import { useLocationSidebarContext } from "~/hooks/useLocationSidebarContext";
 import useMobile from "~/hooks/useMobile";
 import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
+import { getFocusedSplitPane } from "~/utils/splitView";
 import DocumentMenu from "~/menus/DocumentMenu";
 import NewChildDocumentMenu from "~/menus/NewChildDocumentMenu";
 import TableOfContentsMenu from "~/menus/TableOfContentsMenu";
@@ -225,6 +226,25 @@ function DocumentHeader({
           {!isEditing && !isRevision && can.update && (
             <Action>
               <ShareButton document={document} />
+            </Action>
+          )}
+          {!isEditing && !isRevision && team?.aiEnabled && (
+            <Action>
+              <Tooltip
+                content={t("Ask Outline AI")}
+                shortcut={`${metaDisplay}+l`}
+                placement="bottom"
+              >
+                <Button
+                  aria-label={t("Ask Outline AI")}
+                  icon={<SparklesIcon />}
+                  onClick={() =>
+                    ui.setRightSidebar("ai", getFocusedSplitPane())
+                  }
+                  borderOnHover
+                  neutral
+                />
+              </Tooltip>
             </Action>
           )}
           {isEditing && (

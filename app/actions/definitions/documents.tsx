@@ -35,6 +35,7 @@ import {
   EmbedIcon,
   OpenIcon,
   SplitIcon,
+  SparklesIcon,
 } from "outline-icons";
 import { toast } from "sonner";
 import { errToString } from "@shared/utils/error";
@@ -1557,6 +1558,30 @@ export const openDocumentComments = createAction({
   },
 });
 
+export const openDocumentAI = createAction({
+  name: ({ t }) => t("Ask Outline AI"),
+  analyticsName: "Ask Outline AI",
+  section: ActiveDocumentSection,
+  shortcut: ["Meta+L"],
+  icon: <SparklesIcon />,
+  visible: ({ stores }) => !!stores.auth.team?.aiEnabled,
+  perform: ({ activeDocumentId, sidebarContext, stores }) => {
+    // Navigate to the document when triggered from outside its scene, so the
+    // AI panel has the right document context and the right-rail mount is
+    // active.
+    if (activeDocumentId) {
+      const document = stores.documents.get(activeDocumentId);
+      if (document) {
+        const path = documentPath(document);
+        if (!history.location.pathname.startsWith(path)) {
+          history.push(path, { sidebarContext });
+        }
+      }
+    }
+    stores.ui.setRightSidebar("ai", getFocusedSplitPane());
+  },
+});
+
 export const openDocumentHistory = createInternalLinkAction({
   name: ({ t }) => t("History"),
   analyticsName: "Open document history",
@@ -1707,6 +1732,7 @@ export const rootDocumentActions = [
   pinDocumentToCollection,
   pinDocumentToHome,
   openDocumentComments,
+  openDocumentAI,
   openDocumentHistory,
   openDocumentInsights,
   openDocumentInDesktop,

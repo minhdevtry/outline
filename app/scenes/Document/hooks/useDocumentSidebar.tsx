@@ -24,6 +24,9 @@ const DocumentComments = lazyWithRetry(
 const DocumentHistory = lazyWithRetry(
   () => import("~/scenes/Document/components/History/History")
 );
+const DocumentAgent = lazyWithRetry(
+  () => import("~/scenes/Document/components/Agent/DocumentAgent")
+);
 
 interface DocumentSidebarContentProps {
   skipInitialAnimation?: boolean;
@@ -34,6 +37,10 @@ interface DocumentSidebarContentProps {
  * sidebar content. On desktop, wraps content in a single Aside sidebar that
  * stays mounted across panel switches to avoid re-triggering the open/close
  * animation.
+ *
+ * The right rail is only mounted on document routes (`/doc/${slug}`) — for
+ * the agent panel on home, search, and settings pages, the kbar action or
+ * Cmd+L shortcut opens the global `GlobalAgentAside` instead.
  */
 const DocumentSidebarContent = observer(function DocumentSidebarContent({
   skipInitialAnimation,
@@ -54,6 +61,7 @@ const DocumentSidebarContent = observer(function DocumentSidebarContent({
       >
         {panel === "comments" && <DocumentComments />}
         {panel === "history" && <DocumentHistory />}
+        {panel === "ai" && <DocumentAgent />}
       </React.Suspense>
     </Route>
   );

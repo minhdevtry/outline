@@ -11,8 +11,12 @@ module.exports = {
   up: async (queryInterface, Sequelize) => {
     // Enable required extensions in case the previous migration was skipped
     // on a database that pre-dates pgvector. The extension is idempotent.
-    await queryInterface.sequelize.query("CREATE EXTENSION IF NOT EXISTS vector;");
-    await queryInterface.sequelize.query("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
+    await queryInterface.sequelize.query(
+      "CREATE EXTENSION IF NOT EXISTS vector;"
+    );
+    await queryInterface.sequelize.query(
+      "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+    );
 
     await queryInterface.createTable("document_chunks", {
       id: {
@@ -83,9 +87,13 @@ module.exports = {
     await queryInterface.addIndex("document_chunks", ["teamId", "documentId"], {
       name: "document_chunks_team_document_idx",
     });
-    await queryInterface.addIndex("document_chunks", ["documentId", "contentHash"], {
-      name: "document_chunks_content_hash_idx",
-    });
+    await queryInterface.addIndex(
+      "document_chunks",
+      ["documentId", "contentHash"],
+      {
+        name: "document_chunks_content_hash_idx",
+      }
+    );
     await queryInterface.addIndex("document_chunks", {
       name: "document_chunks_embedding_hnsw_idx",
       fields: [Sequelize.literal("embedding vector_cosine_ops")],

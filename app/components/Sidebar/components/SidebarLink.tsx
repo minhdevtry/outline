@@ -1,5 +1,6 @@
 import type { LocationDescriptor } from "history";
 import * as React from "react";
+import { transparentize } from "polished";
 import styled, { useTheme, css } from "styled-components";
 import breakpoint from "styled-components-breakpoint";
 import EventBoundary from "@shared/components/EventBoundary";
@@ -289,7 +290,16 @@ const Link = styled(NavLink)<{
     --background: ${s("sidebarActiveBackground")};
   }
 
-  ${(props) => props.$isActiveDrop && `--background: ${props.theme.slateDark};`}
+  ${(props) =>
+    props.$isActiveDrop &&
+    css`
+      box-shadow:
+        0 0 0 2px ${props.theme.accent},
+        0 0 12px ${transparentize(0.65, props.theme.accent)};
+      background: ${transparentize(0.85, props.theme.accent)} !important;
+      color: ${props.theme.accent} !important;
+      transition: all 150ms ease-in-out;
+    `}
 
   display: flex;
   position: relative;

@@ -69,6 +69,9 @@ export function decrypt(blob: Buffer): string {
   const ciphertext = blob.subarray(IV_LENGTH + TAG_LENGTH);
   const decipher = crypto.createDecipheriv(ALGO, key, iv);
   decipher.setAuthTag(tag);
-  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  const plaintext = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
   return plaintext.toString("utf8");
 }

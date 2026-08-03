@@ -30,6 +30,7 @@ import isTextInput from "~/utils/isTextInput";
 import { client } from "~/utils/ApiClient";
 import { emojiToUrl } from "~/utils/emoji";
 import { documentHistoryPath, documentEditPath } from "~/utils/routeHelpers";
+import { getFocusedSplitPane } from "~/utils/splitView";
 import { useDocumentSave } from "../hooks/useDocumentSave";
 import Container from "./Container";
 import Contents from "./Contents";
@@ -264,6 +265,15 @@ function DocumentScene({
     }
   }, [readOnly, history, document, sidebarContext]);
 
+  const onToggleAI = useCallback(() => {
+    const pane = getFocusedSplitPane();
+    if (ui.getRightSidebar(pane) === "ai") {
+      ui.setRightSidebar(null, pane);
+    } else {
+      ui.setRightSidebar("ai", pane);
+    }
+  }, [ui]);
+
   // Render
   const isShare = !!shareId;
   const embedsDisabled =
@@ -300,6 +310,7 @@ function DocumentScene({
       <RegisterKeyDown trigger="e" handler={goToEdit} />
       <RegisterKeyDown trigger="Escape" handler={goBack} />
       <RegisterKeyDown trigger="h" handler={goToHistory} />
+      <RegisterKeyDown trigger="l" metaKey handler={onToggleAI} />
       <RegisterKeyDown
         trigger="p"
         metaKey

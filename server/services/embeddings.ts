@@ -2,7 +2,10 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import Logger from "@server/logging/Logger";
-import { getPipeline, configureLocalEmbeddingCache } from "@server/utils/embeddings/local";
+import {
+  getPipeline,
+  configureLocalEmbeddingCache,
+} from "@server/utils/embeddings/local";
 
 /**
  * Initialize the local embedding model so the first user-facing `embed()`

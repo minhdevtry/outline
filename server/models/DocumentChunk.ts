@@ -12,9 +12,10 @@ import IdModel from "./base/IdModel";
 
 /**
  * A single embedded chunk of a document, used by the RAG hybrid search.
- * The `embedding` column is a `vector(1024)` from pgvector and is null until
- * the embedding task has run. The `contentHash` lets the task diff against
- * the previous set of chunks cheaply — only re-embed chunks whose text has
+ * The `embedding` column is a `vector(384)` from pgvector (matching the
+ * `Xenova/multilingual-e5-small` local model) and is null until the
+ * embedding task has run. The `contentHash` lets the task diff against the
+ * previous set of chunks cheaply — only re-embed chunks whose text has
  * actually changed.
  */
 @Table({ tableName: "document_chunks", modelName: "documentChunk" })
@@ -59,7 +60,7 @@ class DocumentChunk extends IdModel<
    * never read or mutate it from app code; only the embedding task writes
    * it via raw SQL.
    */
-  @Column({ type: "vector(1024)", field: "embedding" })
+  @Column({ type: "vector(384)", field: "embedding" })
   embedding?: unknown;
 
   @Column(DataType.STRING(64))

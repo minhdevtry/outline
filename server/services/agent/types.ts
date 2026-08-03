@@ -19,8 +19,17 @@ export type AgentEvent =
       stop_reason: string;
       usage?: { input_tokens: number; output_tokens: number };
     }
-  | { type: "sources"; sources: Array<{ id: string; title: string; url: string; snippet: string }> }
+  | {
+      type: "sources";
+      sources: Array<{
+        id: string;
+        title: string;
+        url: string;
+        snippet: string;
+      }>;
+    }
   | { type: "error"; message: string; code?: string }
+  | { type: "session"; sessionId: string }
   | { type: "done" };
 
 export interface AgentTool {
@@ -41,6 +50,24 @@ export interface AgentRunOptions {
   signal: AbortSignal;
   /** Max agent steps before forcing end. Default 8. */
   maxSteps?: number;
+  /**
+   * Optional id of the document the user is currently viewing. The route
+   * resolves this into a `currentDocument` block inside the system prompt.
+   * Agents that read this must call `read_document(documentId)` for the
+   * full text rather than relying on the prompt.
+   */
+  currentDocumentId?: string;
+
+  /**
+   * Optional range of the user's current text selection in the editor. The
+   * route resolves this into a `currentSelection` block inside the system
+   * prompt so the model can act on a sub-range without re-reading the full
+   * document. `text` is truncated by the client.
+   */
+  currentSelection?: { from: number; to: number; text: string };
+
+  /** Model name requested by user. */
+  model?: string;
 }
 
 /**

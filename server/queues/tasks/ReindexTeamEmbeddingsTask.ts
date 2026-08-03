@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
 import Logger from "@server/logging/Logger";
-import { Document, EmbeddingKey } from "@server/models";
+import { Document, Team } from "@server/models";
 import { CronTask, TaskInterval } from "./base/CronTask";
 import EmbedDocumentTask from "./EmbedDocumentTask";
 
@@ -8,13 +8,13 @@ const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Nightly cron task that re-embeds recently-changed documents for every
- * team that has at least one valid Mistral key. Uses a clock-gate because
- * Outline's cron only supports interval scheduling (no fixed times): we run
- * daily and self-skip outside the 01:00-01:30 UTC window.
+ * team that has AI enabled. Uses a clock-gate because Outline's cron only
+ * supports interval scheduling (no fixed times): we run daily and self-skip
+ * outside the 01:00-01:30 UTC window.
  *
  * Documents are re-embedded with `force: false` so unchanged docs are
  * detected by `contentHash` and skipped — only the docs that were updated
- * since the last run actually hit Mistral.
+ * since the last run actually hit the embedding model.
  */
 export default class ReindexTeamEmbeddingsTask extends CronTask {
   public get cron() {
@@ -38,15 +38,14 @@ export default class ReindexTeamEmbeddingsTask extends CronTask {
 
     Logger.info("embedding-cron", "Starting nightly reindex");
 
-    const teamsWithKeys = await EmbeddingKey.findAll({
-      attributes: ["teamId"],
-      where: { isValid: true },
-      group: ["teamId"],
+    const teamsWithAI = await Team.findAll({
+      attributes: ["id"],
+      where: { aiEnabled: true },
     });
 
     const cutoff = new Date(Date.now() - ONE_WEEK_MS);
 
-    for (const { teamId } of teamsWithKeys) {
+    for (const { id: teamId } of teamsWithAI) {
       // Find published, non-deleted, recently-changed documents.
       const docs = await Document.findAll({
         where: {

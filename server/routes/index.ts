@@ -218,7 +218,7 @@ router.get("/sitemap.xml", async (ctx) => {
 
 // catch all for application
 router.get("*", async (ctx, next) => {
-  if (isInvalidAppPath(ctx.path)) {
+  if (ctx.path.startsWith("/api/") || isInvalidAppPath(ctx.path)) {
     ctx.status = 404;
     return;
   }

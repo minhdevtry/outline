@@ -4,12 +4,14 @@ import { UserRole } from "@shared/types";
 import auth from "@server/middlewares/authentication";
 import { rateLimiter } from "@server/middlewares/rateLimiter";
 import { sequelize } from "@server/storage/database";
-import { Document, Team, User } from "@server/models";
+import { Team } from "@server/models";
 import { answerQuestion, getAIStatus } from "@server/services/ai";
-import { APIContext } from "@server/types";
+import type { APIContext } from "@server/types";
 import { getActiveEmbeddingModel } from "@server/utils/embeddings/mistral";
 import FullReindexTeamTask from "@server/queues/tasks/FullReindexTeamTask";
-import agentRouter, { handleAgentRun, handleAgentStatus } from "./agent";
+import EmbedDocumentTask from "@server/queues/tasks/EmbedDocumentTask";
+import { handleAgentRun, handleAgentStatus } from "./agent";
+import { handleChatSend, handleChatStatus } from "../chat/chat";
 
 const router = new Router();
 
@@ -99,39 +101,106 @@ router.post("ai.toggle", auth(), async (ctx: APIContext) => {
 /**
  * Admin: get embedding job statistics for the team.
  */
-router.post(
-  "ai.embeddingStatus",
-  auth(),
-  async (ctx: APIContext) => {
-    const { user } = ctx.state.auth;
-    const teamId = user.teamId;
-    const rows = (await sequelize.query(
-      `SELECT
+router.post("ai.embeddingStatus", auth(), async (ctx: APIContext) => {
+  const { user } = ctx.state.auth;
+  const teamId = user.teamId;
+  const rows = (await sequelize.query(
+    `SELECT
          COUNT(*) FILTER (WHERE status = 'completed')::int AS indexed,
          COUNT(*) FILTER (WHERE status = 'in_progress')::int AS in_progress,
          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
        FROM embedding_jobs
        WHERE "teamId" = :teamId`,
-      { replacements: { teamId }, type: "SELECT" }
-    )) as unknown as Array<{ indexed: number; in_progress: number; pending: number; failed: number }>;
+    { replacements: { teamId }, type: "SELECT" }
+  )) as unknown as Array<{
+    indexed: number;
+    in_progress: number;
+    pending: number;
+    failed: number;
+  }>;
 
-    const stats = rows[0] ?? { indexed: 0, in_progress: 0, pending: 0, failed: 0 };
+  const stats = rows[0] ?? {
+    indexed: 0,
+    in_progress: 0,
+    pending: 0,
+    failed: 0,
+  };
 
-    const docRows = (await sequelize.query(
-      `SELECT
+  const docRows = (await sequelize.query(
+    `SELECT
          (SELECT count(*) FROM documents WHERE "teamId" = :teamId AND "publishedAt" IS NOT NULL AND "deletedAt" IS NULL)::int AS total_documents,
-         (SELECT count(DISTINCT "documentId") FROM document_chunks WHERE "teamId" = :teamId)::int AS indexed_documents`,
-      { replacements: { teamId }, type: "SELECT" }
-    )) as unknown as Array<{ total_documents: number; indexed_documents: number }>;
-    const docs = docRows[0] ?? { total_documents: 0, indexed_documents: 0 };
+         (SELECT count(DISTINCT "documentId") FROM document_chunks WHERE "teamId" = :teamId)::int AS indexed_documents,
+         (SELECT count(*) FROM documents d
+          LEFT JOIN embedding_jobs j ON j."documentId" = d.id
+          WHERE d."teamId" = :teamId
+            AND d."publishedAt" IS NOT NULL
+            AND d."deletedAt" IS NULL
+            AND d."updatedAt" <= NOW() - INTERVAL '5 minutes'
+            AND (j.id IS NULL OR j.status = 'failed' OR d."updatedAt" > j."updatedAt")
+         )::int AS idle_pending`,
+    { replacements: { teamId }, type: "SELECT" }
+  )) as unknown as Array<{
+    total_documents: number;
+    indexed_documents: number;
+    idle_pending: number;
+  }>;
+  const docs = docRows[0] ?? {
+    total_documents: 0,
+    indexed_documents: 0,
+    idle_pending: 0,
+  };
+
+  ctx.body = {
+    data: {
+      ...stats,
+      totalDocuments: docs.total_documents,
+      indexedDocuments: docs.indexed_documents,
+      idlePendingCount: docs.idle_pending,
+      embeddingModel: getActiveEmbeddingModel(),
+    },
+  };
+});
+
+/**
+ * Admin: scan and queue documents that have been idle (unmodified) for >= 5 minutes
+ * and require embedding/indexing.
+ */
+router.post(
+  "ai.indexIdle",
+  auth(),
+  rateLimiter({ requests: 5, duration: 60 }),
+  async (ctx: APIContext) => {
+    const { user } = ctx.state.auth;
+    if (user.role !== UserRole.Admin) {
+      ctx.throw(403, "Only admins can trigger idle indexing");
+    }
+
+    const idleDocs = (await sequelize.query(
+      `SELECT d.id FROM documents d
+       LEFT JOIN embedding_jobs j ON j."documentId" = d.id
+       WHERE d."teamId" = :teamId
+         AND d."publishedAt" IS NOT NULL
+         AND d."deletedAt" IS NULL
+         AND d."updatedAt" <= NOW() - INTERVAL '5 minutes'
+         AND (j.id IS NULL OR j.status = 'failed' OR d."updatedAt" > j."updatedAt")
+       LIMIT 500`,
+      { replacements: { teamId: user.teamId }, type: "SELECT" }
+    )) as unknown as Array<{ id: string }>;
+
+    let count = 0;
+    for (const doc of idleDocs) {
+      await new EmbedDocumentTask().schedule({
+        documentId: doc.id,
+        force: false,
+      });
+      count++;
+    }
 
     ctx.body = {
       data: {
-        ...stats,
-        totalDocuments: docs.total_documents,
-        indexedDocuments: docs.indexed_documents,
-        embeddingModel: getActiveEmbeddingModel(),
+        success: true,
+        queuedCount: count,
       },
     };
   }
@@ -162,7 +231,23 @@ router.post(
 // Agent routes (streaming SSE for the right-rail AI Agent). Registered
 // inline (not via sub-router) to avoid the Koa-router 12 sub-router mount
 // conflict that produced 405 Method Not Allowed.
-router.post("ai-agent.run", auth(), rateLimiter({ requests: 30, duration: 60 }), handleAgentRun);
+router.post(
+  "ai-agent.run",
+  auth(),
+  rateLimiter({ requests: 30, duration: 60 }),
+  handleAgentRun
+);
 router.post("ai-agent.status", auth(), handleAgentStatus);
+
+// Simple chat endpoint (Anthropic-compatible preferred). Just text chat
+// with no tools, no sessions, no plan mode. Wrapped by Cline UI primitives
+// on the frontend. See `server/routes/api/chat/chat.ts`.
+router.post(
+  "chat.send",
+  auth(),
+  rateLimiter({ requests: 60, duration: 60 }),
+  handleChatSend
+);
+router.post("chat.status", auth(), handleChatStatus);
 
 export default router;

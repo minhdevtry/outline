@@ -1,4 +1,8 @@
-import { pipeline, env as transformersEnv, type FeatureExtractionPipeline } from "@huggingface/transformers";
+import {
+  pipeline,
+  env as transformersEnv,
+  type FeatureExtractionPipeline,
+} from "@huggingface/transformers";
 import Logger from "@server/logging/Logger";
 
 /**
@@ -70,10 +74,7 @@ export async function getPipeline(): Promise<FeatureExtractionPipeline> {
         dtype: "q8",
       });
       const elapsed = Date.now() - start;
-      Logger.info(
-        "embedding",
-        `Local embedding model loaded in ${elapsed}ms`
-      );
+      Logger.info("embedding", `Local embedding model loaded in ${elapsed}ms`);
       return pipe;
     })();
   }

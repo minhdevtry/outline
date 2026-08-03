@@ -12,6 +12,7 @@ import {
   type SelectionToolbarMenuDescriptor,
 } from "@shared/editor/types";
 import { SelectionToolbar } from "../components/SelectionToolbar";
+import getAiMenuItems from "../menus/ai";
 import getAttachmentMenuItems from "../menus/attachment";
 import getCodeMenuItems from "../menus/code";
 
@@ -110,6 +111,13 @@ export default class SelectionToolbarExtension extends Extension {
         priority: 0,
         matches: () => true,
         getItems: (ctx) => getFormattingMenuItems(ctx),
+      },
+      {
+        priority: -10,
+        position: "secondary",
+        matches: (ctx) => !ctx.readOnly && !ctx.isInCodeBlock && !ctx.isInCode,
+        getItems: (ctx, view, currentDocument) =>
+          getAiMenuItems(ctx, view, currentDocument),
       },
     ];
   }

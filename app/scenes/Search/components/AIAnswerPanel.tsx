@@ -45,9 +45,9 @@ function AIAnswerPanel({ query, visible, onClose }: Props) {
   const { t } = useTranslation();
   const theme = useTheme();
   const team = useCurrentTeam();
-  const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">(
-    "idle"
-  );
+  const [state, setState] = React.useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [answer, setAnswer] = React.useState<Answer | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [followUp, setFollowUp] = React.useState("");
@@ -145,15 +145,9 @@ function AIAnswerPanel({ query, visible, onClose }: Props) {
         <Title>
           <SparklesIcon color={theme.accent} size={16} />
           <strong>{t("AI Answer")}</strong>
-          {state === "loading" && (
-            <StatusDot aria-label={t("Loading")} />
-          )}
+          {state === "loading" && <StatusDot aria-label={t("Loading")} />}
         </Title>
-        <CloseButton
-          type="button"
-          onClick={onClose}
-          aria-label={t("Close")}
-        >
+        <CloseButton type="button" onClick={onClose} aria-label={t("Close")}>
           <CloseIcon size={16} color={theme.textTertiary} />
         </CloseButton>
       </Header>
@@ -342,7 +336,9 @@ const SourceCard = styled.a`
   border-radius: 6px;
   text-decoration: none;
   color: inherit;
-  transition: background 100ms ease-in-out, border-color 100ms ease-in-out;
+  transition:
+    background 100ms ease-in-out,
+    border-color 100ms ease-in-out;
 
   &:hover {
     background: ${s("sidebarControlHoverBackground")};

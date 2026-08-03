@@ -10,7 +10,7 @@ import { matchDocumentSlug as documentSlug } from "~/utils/routeHelpers";
 import useAutoRefresh from "~/hooks/useAutoRefresh";
 
 const Authenticated = lazy(() => import("~/components/Authenticated"));
-const Agent = lazy(() => import("~/scenes/Agent/Agent"));
+const GlobalAgentAside = lazy(() => import("~/scenes/Agent/GlobalAgentAside"));
 const AuthenticatedRoutes = lazy(() => import("./authenticated"));
 const Shared = lazy(() => import("~/scenes/Shared"));
 const Login = lazy(() => import("~/scenes/Login"));
@@ -66,7 +66,7 @@ export default function Routes() {
           </Authenticated>
         </Switch>
       )}
-      <Agent />
+      <GlobalAgentAside />
     </Suspense>
   );
 }

@@ -80,10 +80,16 @@ export default function createCSPMiddleware(options?: CSPOptions) {
     styleSrc.push("cdn.zapier.com");
   }
 
+  // Allow Cloudflare insights beacon script
+  scriptSrc.push("static.cloudflareinsights.com");
+  scriptSrc.push("https://static.cloudflareinsights.com");
+
   // Allow to load assets from Vite
   if (!env.isProduction) {
     scriptSrc.push(env.URL.replace(`:${env.PORT}`, ":3001"));
     scriptSrc.push("localhost:3001");
+    scriptSrc.push("localhost:3002");
+    scriptSrc.push("localhost:3003");
   } else {
     scriptSrc.push(env.URL);
   }

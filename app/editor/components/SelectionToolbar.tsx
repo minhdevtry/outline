@@ -2,6 +2,7 @@ import type { EditorState, Selection } from "prosemirror-state";
 import Suggestion from "~/editor/extensions/Suggestion";
 import { NodeSelection, TextSelection } from "prosemirror-state";
 import * as React from "react";
+import styled from "styled-components";
 
 import filterExcessSeparators from "@shared/editor/lib/filterExcessSeparators";
 import { buildSelectionContext } from "@shared/editor/lib/buildSelectionContext";
@@ -11,7 +12,13 @@ import {
 } from "@shared/editor/queries/getMarkRange";
 import { isInCode } from "@shared/editor/queries/isInCode";
 import { isInNotice } from "@shared/editor/queries/isInNotice";
-import { MenuType, type MenuItem } from "@shared/editor/types";
+import { s } from "@shared/styles";
+import {
+  MenuType,
+  type CurrentDocumentRef,
+  type MenuItem,
+} from "@shared/editor/types";
+import { useDocumentContext } from "~/components/DocumentContext";
 import useBoolean from "~/hooks/useBoolean";
 import useEventListener from "~/hooks/useEventListener";
 import useMobile from "~/hooks/useMobile";
@@ -68,6 +75,7 @@ enum Toolbar {
 export function SelectionToolbar(props: Props) {
   const { readOnly = false } = props;
   const { view, extensions, commands, selectionToolbarMenus } = useEditor();
+  const { document: docCtx } = useDocumentContext();
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const isMobile = useMobile();
   const isActive = props.isActive || isMobile;
@@ -213,15 +221,27 @@ export function SelectionToolbar(props: Props) {
   }
 
   const { isTemplate, rtl, canComment, canUpdate, ...rest } = props;
+  const currentDocument: CurrentDocumentRef | undefined = docCtx
+    ? { id: docCtx.id, title: docCtx.title }
+    : undefined;
 
   // Build selection context once, shared across all menu matchers
   const ctx = buildSelectionContext(state, { readOnly, isTemplate, rtl });
 
-  // Find the first matching menu from the registry (sorted by priority)
-  const matched = selectionToolbarMenus.find((menu) => menu.matches(ctx));
+  // The first matching primary menu wins for the top (formatting) row. The
+  // first matching secondary menu (currently the AI row) is rendered as a
+  // separate compact row below the primary, in the Notion AI style.
+  const primaryMatched = selectionToolbarMenus.find(
+    (menu) => menu.position !== "secondary" && menu.matches(ctx)
+  );
+  const secondaryMatched = selectionToolbarMenus.find(
+    (menu) => menu.position === "secondary" && menu.matches(ctx)
+  );
 
-  let items: MenuItem[] = matched ? matched.getItems(ctx) : [];
-  const align = matched?.align ?? "center";
+  let items: MenuItem[] = primaryMatched
+    ? primaryMatched.getItems(ctx, view, currentDocument)
+    : [];
+  const align = primaryMatched?.align ?? "center";
 
   // Filter out items for disabled extensions or invisible items
   items = items.filter((item) => {
@@ -262,6 +282,13 @@ export function SelectionToolbar(props: Props) {
     return item;
   });
 
+  let secondaryItems: MenuItem[] = [];
+  if (secondaryMatched) {
+    secondaryItems = secondaryMatched.getItems(ctx, view, currentDocument);
+    secondaryItems = secondaryItems.filter((item) => item.visible !== false);
+    secondaryItems = filterExcessSeparators(secondaryItems);
+  }
+
   const handleClickOutsideLinkEditor = (ev: MouseEvent | TouchEvent) => {
     if (ev.target instanceof Element && ev.target.closest(".image-wrapper")) {
       return;
@@ -272,7 +299,7 @@ export function SelectionToolbar(props: Props) {
   // Inline menus render as a vertical menu anchored to the selection rather
   // than as a horizontal toolbar with trigger buttons.
   if (
-    matched?.variant === MenuType.inline &&
+    primaryMatched?.variant === MenuType.inline &&
     activeToolbar === Toolbar.Menu &&
     items.length
   ) {
@@ -283,7 +310,7 @@ export function SelectionToolbar(props: Props) {
   // scrolls instead of floating at a position fixed on selection. On mobile the
   // floating toolbar renders as a bottom bar, so the sticky path is desktop only.
   if (
-    matched?.sticky &&
+    primaryMatched?.sticky &&
     !isMobile &&
     activeToolbar === Toolbar.Menu &&
     items.length
@@ -328,8 +355,38 @@ export function SelectionToolbar(props: Props) {
           onClickOutside={handleClickOutsideLinkEditor}
         />
       ) : activeToolbar === Toolbar.Menu && items.length ? (
-        <ToolbarMenu items={items} {...rest} />
+        <ToolbarStack
+          primary={<ToolbarMenu items={items} {...rest} />}
+          secondary={
+            secondaryItems.length ? (
+              <ToolbarMenu items={secondaryItems} {...rest} />
+            ) : null
+          }
+        />
       ) : null}
     </FloatingToolbar>
   );
 }
+
+/** Stacks two `ToolbarMenu` rows vertically inside the floating toolbar. */
+const ToolbarStack = (props: {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+}) => (
+  <Stack>
+    {props.primary}
+    {props.secondary ? <Divider /> : null}
+    {props.secondary}
+  </Stack>
+);
+
+const Stack = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const Divider = styled.div`
+  height: 1px;
+  background: ${s("divider")};
+  margin: 0 4px;
+`;

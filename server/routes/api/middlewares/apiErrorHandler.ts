@@ -42,7 +42,19 @@ export default function apiErrorHandler() {
         transformedErr = NotFoundError();
       }
 
-      throw transformedErr;
+      const status =
+        typeof (transformedErr as { status?: number }).status === "number"
+          ? (transformedErr as { status: number }).status
+          : 500;
+      const message =
+        (transformedErr as { message?: string }).message || "An error occurred";
+
+      ctx.status = status;
+      ctx.body = {
+        ok: false,
+        status,
+        error: message,
+      };
     }
   };
 }

@@ -11,6 +11,7 @@ import { Op, Sequelize } from "sequelize";
 import { randomUUID } from "node:crypto";
 import { errToString } from "@shared/utils/error";
 import type { DirectionFilter, SortFilter } from "@shared/types";
+import { TextEditMode } from "@shared/types";
 import { type NavigationNode } from "@shared/types";
 import {
   FileOperationFormat,
@@ -1320,6 +1321,38 @@ router.post(
     ctx.body = {
       data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document]),
+    };
+  }
+);
+
+router.post(
+  "documents.applyEdit",
+  auth(),
+  validate(T.DocumentsApplyEditSchema),
+  transaction(),
+  async (ctx: APIContext<T.DocumentsApplyEditReq>) => {
+    const { transaction } = ctx.state;
+    const { id, text } = ctx.input.body;
+    const { user } = ctx.state.auth;
+    const editorVersion = ctx.headers["x-editor-version"] as string | undefined;
+
+    const document = await Document.findByPk(id, {
+      userId: user.id,
+      includeState: true,
+      transaction,
+    });
+    authorize(user, "update", document);
+
+    const updated = await documentUpdater(ctx, {
+      document,
+      text,
+      editMode: TextEditMode.Replace,
+      editorVersion,
+    });
+
+    ctx.body = {
+      data: await presentDocument(ctx, updated),
+      policies: presentPolicies(user, [updated]),
     };
   }
 );

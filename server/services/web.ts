@@ -62,7 +62,16 @@ export default function init(app: Koa = new Koa(), server?: Server) {
   // Make `ctx.userAgent` available
   app.use<BaseContext, UserAgentContext>(userAgent);
 
-  app.use(compress());
+  app.use(
+    compress({
+      filter: (contentType) => {
+        if (/text\/event-stream/i.test(contentType)) {
+          return false;
+        }
+        return true;
+      },
+    })
+  );
 
   // Monitor server connections
   if (server) {
@@ -104,6 +113,12 @@ export default function init(app: Koa = new Koa(), server?: Server) {
 
   app.use(mount("/auth", auth));
   app.use(mount("/oauth", oauth));
+  app.use(async (ctx, next) => {
+    if (ctx.path.startsWith("/api/")) {
+      return;
+    }
+    await next();
+  });
   app.use(mount(routes));
 
   return app;

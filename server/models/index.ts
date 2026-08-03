@@ -86,3 +86,15 @@ export { default as DocumentChunk } from "./DocumentChunk";
 export { default as EmbeddingJob } from "./EmbeddingJob";
 
 export { default as EmbeddingKey } from "./EmbeddingKey";
+
+export { default as AgentSession } from "./AgentSession";
+
+export { default as AgentMessage } from "./AgentMessage";
+
+export { default as AgentSkill } from "./AgentSkill";
+
+export { default as AgentMemory } from "./AgentMemory";
+
+export { default as AgentSchedule } from "./AgentSchedule";
+
+export { default as AgentProviderKey } from "./AgentProviderKey";

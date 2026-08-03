@@ -24,6 +24,10 @@ function KeyboardShortcuts({ defaultQuery = "" }: Props) {
             label: t("Open command menu"),
           },
           {
+            shortcut: <KeyboardShortcut keys={["meta", "l"]} />,
+            label: t("Ask Outline AI"),
+          },
+          {
             shortcut: (
               <KeyboardShortcut
                 keys={["meta", { display: "[", symbol: true }]}

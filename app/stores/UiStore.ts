@@ -29,7 +29,7 @@ export enum SystemTheme {
 export type ResolvedTheme = "light" | "dark" | "system";
 
 /** The panels that can be displayed in the right sidebar. */
-export type RightSidebarPanel = "comments" | "history";
+export type RightSidebarPanel = "comments" | "history" | "ai";
 
 type PersistedData = Pick<
   UiStore,

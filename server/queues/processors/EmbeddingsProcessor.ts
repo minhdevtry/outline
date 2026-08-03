@@ -48,7 +48,10 @@ export default class EmbeddingsProcessor extends BaseProcessor {
   }
 
   private async handlePermanentDelete(documentId: string) {
-    Logger.info("embedding", `Wiping chunks for permanently-deleted ${documentId}`);
+    Logger.info(
+      "embedding",
+      `Wiping chunks for permanently-deleted ${documentId}`
+    );
     await sequelize.transaction(async (tx) => {
       await DocumentChunk.destroy({ where: { documentId }, transaction: tx });
       await EmbeddingJob.destroy({ where: { documentId }, transaction: tx });

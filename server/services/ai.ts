@@ -1,5 +1,5 @@
 import Logger from "@server/logging/Logger";
-import { User, Team } from "@server/models";
+import { type User, Team } from "@server/models";
 import env from "@server/env";
 import { teamHasEmbeddingKey } from "@server/utils/embeddings/mistral";
 import { searchChunks } from "@server/utils/rag/search";
@@ -151,7 +151,10 @@ export async function answerQuestion(
   try {
     chunks = await searchChunks(query, user.teamId, 8);
   } catch (err) {
-    Logger.error(`[ai] searchChunks failed: ${(err as Error).message}`, err as Error);
+    Logger.error(
+      `[ai] searchChunks failed: ${(err as Error).message}`,
+      err as Error
+    );
     return {
       answer:
         "I couldn't search the workspace right now. Please try again in a moment.",
@@ -177,9 +180,10 @@ export async function answerQuestion(
   const accepted: typeof chunks = [];
   let used = 0;
   for (const c of chunks) {
-    const truncated = c.content.length > MAX_CHUNK_CHARS
-      ? c.content.slice(0, MAX_CHUNK_CHARS) + "…"
-      : c.content;
+    const truncated =
+      c.content.length > MAX_CHUNK_CHARS
+        ? c.content.slice(0, MAX_CHUNK_CHARS) + "…"
+        : c.content;
     const cost = truncated.length + 8;
     if (used + cost > maxContextChars && accepted.length > 0) {
       break;
@@ -206,9 +210,7 @@ export async function answerQuestion(
 
   const contextBlock = accepted
     .map((c, i) => {
-      const headingLine = c.heading
-        ? ` (heading: "${c.heading}")`
-        : "";
+      const headingLine = c.heading ? ` (heading: "${c.heading}")` : "";
       return `[${i + 1}]${headingLine} Title: ${c.documentTitle}\nContent: ${c.content}\n---\n`;
     })
     .join("\n");

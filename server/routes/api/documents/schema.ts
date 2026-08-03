@@ -259,6 +259,20 @@ export const DocumentsTemplatizeSchema = BaseSchema.extend({
 
 export type DocumentsTemplatizeReq = z.infer<typeof DocumentsTemplatizeSchema>;
 
+/**
+ * Accept a pending edit proposed by the AI agent's `edit_document` tool.
+ * Reuses the document-updater pipeline so authorization, revision creation,
+ * and event publishing all happen the same way as a regular user edit.
+ */
+export const DocumentsApplyEditSchema = BaseSchema.extend({
+  body: BaseIdSchema.extend({
+    /** New full document text, exactly what the agent produced. */
+    text: z.string().max(DocumentValidation.maxLength),
+  }),
+});
+
+export type DocumentsApplyEditReq = z.infer<typeof DocumentsApplyEditSchema>;
+
 export const DocumentsUpdateSchema = BaseSchema.extend({
   body: BaseIdSchema.extend({
     /** Doc title to be updated */

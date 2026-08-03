@@ -22,6 +22,8 @@ import {
   DoneIcon,
   EmbedIcon,
   CollapseIcon,
+  SparklesIcon,
+  GlobeIcon,
 } from "outline-icons";
 import * as React from "react";
 import styled from "styled-components";
@@ -32,7 +34,10 @@ import type { MenuItem } from "@shared/editor/types";
 import { MentionType } from "@shared/types";
 import { toISODate } from "@shared/utils/date";
 import { metaDisplay } from "@shared/utils/keyboard";
+import stores from "~/stores";
 import Desktop from "~/utils/Desktop";
+import { matchPath } from "react-router-dom";
+import { matchDocumentSlug } from "~/utils/routeHelpers";
 
 const Img = styled(Image)`
   border-radius: 2px;
@@ -281,10 +286,69 @@ export default function blockMenuItems(
       icon: <Img src="/images/diagrams.png" alt="Diagrams.net Diagram" />,
       keywords: "diagram flowchart draw.io",
     },
+    {
+      name: "separator",
+    },
+    {
+      title: t("Ask AI"),
+      icon: <SparklesIcon />,
+      keywords: "ai agent ask",
+      onClick: () =>
+        dispatchAiPrompt("Đoạn văn này nói về gì? Tóm tắt và giải thích."),
+    },
+    {
+      title: t("Improve writing"),
+      icon: <SparklesIcon />,
+      keywords: "ai improve rewrite polish",
+      onClick: () =>
+        dispatchAiPrompt(
+          "Improve this passage. Keep the same meaning, tighten the prose, and fix any grammar issues."
+        ),
+    },
+    {
+      title: t("Summarize"),
+      icon: <SparklesIcon />,
+      keywords: "ai summary tldr",
+      onClick: () =>
+        dispatchAiPrompt("Summarize the following passage in 2-3 sentences."),
+    },
+    {
+      title: t("Translate"),
+      icon: <GlobeIcon />,
+      keywords: "ai translate language",
+      onClick: () =>
+        dispatchAiPrompt(
+          "Translate the following passage to Vietnamese (or the user's preferred language). Preserve formatting and code blocks."
+        ),
+    },
   ];
 
   // Filter out diagrams.net in desktop app
   return Desktop.isElectron()
     ? items.filter((item) => item.name !== "editDiagram")
     : items;
+}
+
+/**
+ * Dispatch a pre-filled prompt to the AI agent. Used by the `/ai` slash
+ * menu commands. Opens the right-rail panel and lets the agent handle the
+ * rest (it will read the current document, see the selection if any, and
+ * decide what to do).
+ */
+function dispatchAiPrompt(prompt: string) {
+  // Defer to next microtask so the slash menu close handler can run
+  // before the panel mounts and the SSE connection opens.
+  void Promise.resolve().then(() => {
+    const slugMatch = matchPath<{ documentSlug: string }>(
+      window.location.pathname,
+      { path: `/doc/${matchDocumentSlug}` }
+    );
+    const doc = slugMatch
+      ? stores.documents.get(slugMatch.params.documentSlug)
+      : undefined;
+    stores.agent.openPanel();
+    void stores.agent.send(prompt, {
+      currentDocumentId: doc?.id,
+    });
+  });
 }

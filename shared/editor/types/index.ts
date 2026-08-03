@@ -11,6 +11,9 @@ export type NodeWithPos = {
   node: ProsemirrorNode;
 };
 
+/** Lightweight id+title of the document the user is currently viewing. */
+export type CurrentDocumentRef = { id: string; title: string };
+
 export type PlainTextSerializer = (node: ProsemirrorNode) => string;
 
 /** The severity of a notice surfaced to the user from the editor. */
@@ -185,7 +188,26 @@ export interface SelectionToolbarMenuDescriptor {
    * Returns the menu items to display for the current selection.
    *
    * @param ctx - the current selection context.
+   * @param view - the editor view, passed through so menus (like the AI row)
+   *   that need to read the live selection or focus the editor can do so
+   *   without taking a dependency on React context.
+   * @param currentDocument - the id and title of the document the user is
+   *   currently viewing; available in the Document scene. AI menu items use
+   *   this to thread `currentDocumentId` into agent invocations.
    * @returns an array of menu items.
    */
-  getItems: (ctx: SelectionContext) => MenuItem[];
+  getItems: (
+    ctx: SelectionContext,
+    view?: EditorView,
+    currentDocument?: CurrentDocumentRef
+  ) => MenuItem[];
+
+  /**
+   * Optional position in the toolbar. "primary" (default) is the horizontal
+   * formatting row that appears above the selection. "secondary" is a
+   * separate compact row rendered below the primary (used for AI actions).
+   * Only one primary and one secondary menu can be active at a time; the
+   * toolbar picks the first match for each slot, by priority.
+   */
+  position?: "primary" | "secondary";
 }

@@ -1,6 +1,5 @@
 import { useMatches, KBarResults } from "kbar";
 import styled from "styled-components";
-import Text from "~/components/Text";
 import CommandBarItem from "./CommandBarItem";
 
 export default function CommandBarResults() {
@@ -14,11 +13,11 @@ export default function CommandBarResults() {
     <Container>
       <KBarResults
         items={results}
-        maxHeight={400}
+        maxHeight={420}
         onRender={({ item, active }) =>
           typeof item === "string" ? (
-            <Header type="tertiary" size="xsmall" ellipsis>
-              {item}
+            <Header>
+              <SectionBadge>{item}</SectionBadge>
             </Header>
           ) : (
             <CommandBarItem
@@ -33,18 +32,38 @@ export default function CommandBarResults() {
   );
 }
 
-// Cannot style KBarResults unfortunately, so we must wrap and target the inner
+// Cannot style KBarResults directly, so we target via wrapper
 const Container = styled.div`
   > div {
     padding-bottom: 8px;
   }
 `;
 
-const Header = styled(Text).attrs({ as: "h3" })`
-  letter-spacing: 0.03em;
+const Header = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  padding-block: 16px 4px;
-  padding-inline: 20px 0;
-  height: 36px;
+  padding: 12px 16px 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: ${(props) => props.theme.textTertiary};
   cursor: default;
+`;
+
+const SectionBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: ${(props) =>
+    props.theme.sidebarControlHoverBackground ||
+    props.theme.backgroundSecondary};
+  color: ${(props) => props.theme.textSecondary};
+  border: 1px solid ${(props) => props.theme.divider};
 `;

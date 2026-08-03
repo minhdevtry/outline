@@ -32,7 +32,10 @@ export default class FullReindexTeamTask extends BaseTask<FullReindexTeamProps> 
 
   public async perform(props: FullReindexTeamProps) {
     const { teamId, force } = props;
-    Logger.info("embedding", `Full reindex for team ${teamId} (force=${force})`);
+    Logger.info(
+      "embedding",
+      `Full reindex for team ${teamId} (force=${force})`
+    );
 
     let offset = 0;
     let total = 0;

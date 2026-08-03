@@ -1,8 +1,8 @@
 import { sequelize } from "@server/storage/database";
 import Logger from "@server/logging/Logger";
-import { Document, DocumentChunk, EmbeddingJob, Team } from "@server/models";
+import { Document, DocumentChunk, Team } from "@server/models";
 import { getMistralClient } from "@server/utils/embeddings/mistral";
-import { chunkMarkdown, Chunk } from "@server/utils/rag/chunker";
+import { chunkMarkdown, type Chunk } from "@server/utils/rag/chunker";
 import { BaseTask, TaskPriority } from "./base/BaseTask";
 
 export interface EmbedDocumentProps {
@@ -39,7 +39,10 @@ export default class EmbedDocumentTask extends BaseTask<EmbedDocumentProps> {
 
   public async perform(props: EmbedDocumentProps) {
     const { documentId, force = false } = props;
-    Logger.info("embedding", `Embedding document ${documentId} (force=${force})`);
+    Logger.info(
+      "embedding",
+      `Embedding document ${documentId} (force=${force})`
+    );
 
     // Step 1: mark job in_progress
     await upsertJob(documentId, "in_progress", { startedAt: new Date() });
@@ -57,7 +60,10 @@ export default class EmbedDocumentTask extends BaseTask<EmbedDocumentProps> {
     if (document.deletedAt || document.archivedAt) {
       // Don't (re-)index soft-deleted or archived docs. Chunks will be
       // wiped by the permanent_delete processor.
-      Logger.info("embedding", `Document ${documentId} soft-deleted/archived, skipping`);
+      Logger.info(
+        "embedding",
+        `Document ${documentId} soft-deleted/archived, skipping`
+      );
       await upsertJob(documentId, "completed", {
         chunksCount: 0,
         completedAt: new Date(),
@@ -155,7 +161,10 @@ export default class EmbedDocumentTask extends BaseTask<EmbedDocumentProps> {
     // Step 6: write transaction
     await sequelize.transaction(async (tx) => {
       if (removedIds.length > 0) {
-        await DocumentChunk.destroy({ where: { id: removedIds }, transaction: tx });
+        await DocumentChunk.destroy({
+          where: { id: removedIds },
+          transaction: tx,
+        });
       }
       for (let i = 0; i < toEmbed.length; i++) {
         const c = toEmbed[i];

@@ -75,6 +75,8 @@ module.exports = {
 
   down: async (queryInterface) => {
     await queryInterface.dropTable("embedding_jobs");
-    await queryInterface.sequelize.query("DROP TYPE IF EXISTS embedding_job_status;");
+    await queryInterface.sequelize.query(
+      "DROP TYPE IF EXISTS embedding_job_status;"
+    );
   },
 };

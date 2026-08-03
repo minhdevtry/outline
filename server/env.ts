@@ -575,6 +575,37 @@ export class Environment {
   );
 
   /**
+   * Anthropic API key (Claude). When set, the agent prefers Anthropic
+   * over the OpenAI provider. Works with any Anthropic-compatible endpoint
+   * via `ANTHROPIC_API_BASE_URL`.
+   */
+  public ANTHROPIC_API_KEY = this.toOptionalString(
+    environment.ANTHROPIC_API_KEY
+  );
+
+  /**
+   * Anthropic model ID. Defaults to claude-sonnet-4-6 for cost.
+   */
+  public ANTHROPIC_MODEL = this.toOptionalString(
+    environment.ANTHROPIC_MODEL ?? "claude-sonnet-4-6"
+  );
+
+  /**
+   * Base URL for an Anthropic-compatible AI endpoint. Defaults to the
+   * official Anthropic Messages API. Set to a self-hosted gateway URL
+   * (e.g. LiteLLM proxy) to route Claude traffic through your infra.
+   */
+  @IsOptional()
+  @IsUrl({
+    protocols: ["http", "https"],
+    require_protocol: true,
+    require_tld: false,
+  })
+  public ANTHROPIC_API_BASE_URL = this.toOptionalString(
+    environment.ANTHROPIC_API_BASE_URL
+  );
+
+  /**
    * Base URL for an Anthropic-compatible AI endpoint. When set, AI Answer will
    * call {AI_API_BASE_URL}/v1/chat/completions instead of the default OpenAI
    * URL. Use this to point Outline at a self-hosted LLM gateway, a proxy, or
